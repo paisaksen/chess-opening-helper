@@ -24,7 +24,8 @@ button:hover{border-color:var(--ac)}button.on{background:var(--ac);color:#fff;bo
 .btns{display:flex;flex-wrap:wrap;gap:6px}
 table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;color:var(--mut);font-size:12px}
 td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rgba(120,120,120,.15)}
-.mut{color:var(--mut);font-size:13px}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
+.mut{color:var(--mut);font-size:13px}
+#moves{max-height:55vh;overflow:auto}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
@@ -85,6 +86,12 @@ const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
 const over=n=>new Chess(n.fen).game_over();
 function fixCastle(n,u){const t={e1h1:'e1g1',e1a1:'e1c1',e8h8:'e8g8',e8a8:'e8c8'}[u];
   return t&&new Chess(n.fen).get(u.slice(0,2))?.type==='k'?t:u}
+function buildOpp(n){ // all legal moves of an opponent position, probability (games+1)/(N+L) from the stored Lichess counts
+  const c=new Chess(n.fen),ls=c.moves({verbose:true}),uc=m=>m.from+m.to+(m.promotion||'');
+  n.N=ls.reduce((a,m)=>a+(n.g[uc(m)]||0),0);n.moves=[];
+  for(const m of ls){const u=uc(m);c.move({from:m.from,to:m.to,promotion:m.promotion});const f=c.fen();c.undo();
+    n.moves.push({uci:u,san:m.san,to:node(f).k,p:Math.log2(((n.g[u]||0)+1)/(n.N+ls.length))})}
+  n.moves.sort((a,b)=>b.p-a.p)}
 function addMove(n,uci,p){uci=fixCastle(n,uci);
   const ex=n.moves.find(m=>m.uci===uci);if(ex)return ex;
   const c=new Chess(n.fen),r=c.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]});
@@ -112,32 +119,32 @@ async function fetchOpp(n){
   const r=await fetch(u,{headers:cfg.token?{Authorization:'Bearer '+cfg.token}:{}});
   if(!r.ok){if(r.status===401&&cfg.token){cfg.token='';ls('cfg',JSON.stringify(cfg))}
     throw Error('Lichess API error '+r.status+(r.status===401?' – please log in with Lichess (top right)':''))}
-  const d=await r.json(),tot=d.white+d.draws+d.black;
-  if(tot>0)for(const x of d.moves)addMove(n,x.uci,Math.log2((x.white+x.draws+x.black)/tot))}
-async function enter(p){ // move to a position; fetch + auto-play the most common reply if the opponent is to move with no data
+  const d=await r.json(),g={};
+  for(const x of d.moves||[]){const u=fixCastle(n,x.uci);g[u]=(g[u]||0)+x.white+x.draws+x.black}
+  n.g=g;n.exp=true;buildOpp(n)}
+async function enter(p){ // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
   S.path=p;const n=cur();
-  if(!n.moves.length&&!userTurn(n)&&!over(n)&&!n.nodata){await fetchOpp(n);recompute();
-    if(!n.moves.length){n.nodata=true;toast('Lichess has no games here with the current filters – you can play a move for your opponent.')}
-    const m=n.moves[0];if(m&&n.prob+m.p>=S.limit)S.path=[...p,m.to]}
+  if(!userTurn(n)&&!over(n)&&!n.exp){await fetchOpp(n);recompute();
+    const m=n.N>0?n.moves[0]:null;if(m&&n.prob+m.p>=S.limit)S.path=[...p,m.to]}
   if(S.stay)S.focus=S.path.at(-1)}
 async function userMove(uci){const n=cur();
-  const m=n.moves.find(x=>x.uci===uci)||addMove(n,uci,userTurn(n)?0:-1);
-  recompute();await enter([...S.path,m.to])}
+  if(!userTurn(n)&&!n.exp)await fetchOpp(n);
+  const m=n.moves.find(x=>x.uci===uci)||(userTurn(n)?addMove(n,uci,0):null);
+  if(!m)throw Error('Illegal move');recompute();await enter([...S.path,m.to])}
 
 /* ---------- save / load ---------- */
-const ser=()=>({v:2,white:S.white,limit:isFinite(S.limit)?S.limit:null,stay:S.stay,focus:S.focus,path:S.path,
-  moves:[...S.nodes.values()].flatMap(n=>n.moves.map(m=>[n.k,m.uci,m.p])),
-  ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k)});
-function load(o){blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;
-  for(const [k,u,p] of o.moves)addMove(S.nodes.get(k),u,p);
+const ser=()=>{const opp=[],user=[];
+  for(const n of S.nodes.values()){if(n.exp)opp.push([n.k,n.g]);else if(userTurn(n)&&n.moves.length)user.push([n.k,n.moves.map(m=>m.uci)])}
+  return{v:3,white:S.white,limit:isFinite(S.limit)?S.limit:null,stay:S.stay,focus:S.focus,path:S.path,opp,user,
+    ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k)}};
+function load(o){if(o.v!==3)throw Error('This tree was saved by an older version and cannot be loaded.');
+  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;
+  const om=new Map(o.opp),um=new Map(o.user),seen=new Set(),q=[START];
+  while(q.length){const k=q.shift();if(seen.has(k))continue;seen.add(k);const n=S.nodes.get(k);
+    if(om.has(k)){n.g=om.get(k);n.exp=true;buildOpp(n)}else if(um.has(k))um.get(k).forEach(u=>addMove(n,u,0));
+    for(const m of n.moves)if(!seen.has(m.to)&&(om.has(m.to)||um.has(m.to)))q.push(m.to)}
   (o.ignored||[]).forEach(k=>{if(S.nodes.has(k))S.nodes.get(k).ignore=true});recompute();
   if(o.path?.every(k=>S.nodes.has(k)))S.path=o.path;if(S.nodes.has(o.focus))S.focus=o.focus}
-function fromOld(t){ // notebook-format file
-  blank(t.white,S?S.undo:[]);S.limit=t.limit==null?-Infinity:t.limit;S.stay=!!t.stay_with_line;
-  const P=t.positions,M=t.moves,root=P.findIndex(p=>key(p[0])===START),idx=new Map([[root,S.nodes.get(START)]]),q=[root];
-  while(q.length){const i=q.shift(),n=idx.get(i);if(P[i][8])n.ignore=true;
-    for(const mi of P[i][2]){const [u,,to,p]=M[mi],m=addMove(n,u,p);if(!idx.has(to)){idx.set(to,S.nodes.get(m.to));q.push(to)}}}
-  recompute()}
 const slot=w=>w?'tree-white':'tree-black';
 const persist=()=>{ls(slot(S.white),JSON.stringify(ser()));ls('colour',S.white?'w':'b')};
 async function setColour(w){if(busy||S.white===w)return;persist();
@@ -165,10 +172,10 @@ const A={
   save(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(ser())],{type:'application/json'}));a.download=(S.white?'white':'black')+'-opening-tree.json';a.click()},
   next:()=>nav(async()=>{const r=nextLine();if(!r)throw Error('No unfinished lines left (check focus and limit).');await enter(r)}),
   back:()=>nav(async()=>{if(S.path.length>1)S.path=S.path.slice(0,-1)}),
-  fwd:()=>nav(async()=>{const n=cur();let b=null;
-    for(const m of n.moves){const t=S.nodes.get(m.to);if(!t.ignore&&(!b||t.prob>b.t.prob))b={m,t}}
-    if(!b){if(!n.moves.length&&!userTurn(n)&&!over(n)&&!n.nodata)return enter(S.path);throw Error('No further moves in the tree.')}
-    await enter([...S.path,b.m.to])}),
+  fwd:()=>nav(async()=>{const n=cur();
+    if(!userTurn(n)&&!over(n)){if(!n.exp)return enter(S.path);if(!n.N)throw Error("No Lichess games here – choose the opponent's move yourself.")}
+    let b=null;for(const m of n.moves){const t=S.nodes.get(m.to);if(!t.ignore&&(!b||t.prob>b.t.prob))b={m,t}}
+    if(!b)throw Error('No further moves in the tree.');await enter([...S.path,b.m.to])}),
   root:()=>nav(async()=>{const i=S.path.indexOf(S.focus);S.path=i>=0?S.path.slice(0,i+1):pathTo(S.focus)}),
   undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
   reviveall:()=>act(async()=>{subtree(cur().k).forEach(x=>x.ignore=false)}),
@@ -178,12 +185,14 @@ const A={
     n.ignore=!n.ignore;if(n.ignore){S.path=S.path.slice(0,-1);if(S.focus===n.k)S.focus=S.path.at(-1)}}),
   stay:()=>act(async()=>{S.stay=!S.stay}),
   flip(){S.flip=!S.flip;render()},
-  del:()=>act(async()=>{const n=cur();if(S.path.length<2)throw Error('Cannot delete the starting position.');
-    if(!confirm('Delete this position and everything only reachable through it?'))throw Error('Cancelled');
-    for(const o of S.nodes.values())o.moves=o.moves.filter(m=>m.to!==n.k);
+  del:()=>act(async()=>{const n=cur(),mine=userTurn(n);
+    if(S.path.length<2)throw Error('Cannot delete the starting position.');
+    if(mine&&!n.moves.length)throw Error('There are no moves of yours below this position.');
+    if(!confirm(mine?'Delete the moves you chose from this position, and everything below them?':'Delete this position (your move leading here) and everything below it?'))throw Error('Cancelled');
+    if(mine)n.moves=[];else for(const o of S.nodes.values())if(userTurn(o))o.moves=o.moves.filter(m=>m.to!==n.k);
     const reach=new Set();(function w(k){if(reach.has(k))return;reach.add(k);S.nodes.get(k).moves.forEach(m=>w(m.to))})(START);
     for(const k of [...S.nodes.keys()])if(!reach.has(k))S.nodes.delete(k);
-    S.path=S.path.slice(0,-1);while(!S.nodes.has(S.path.at(-1)))S.path.pop();
+    if(!mine)S.path=S.path.slice(0,-1);while(!S.nodes.has(S.path.at(-1)))S.path.pop();
     if(!S.nodes.has(S.focus))S.focus=START})};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b)A[b.dataset.a]();
   const r=e.target.closest('[data-mv]');if(r)act(async()=>userMove(r.dataset.mv))});
@@ -194,7 +203,7 @@ $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.va
   try{const t=JSON.parse((await f.text()).replace(/-Infinity/g,'null'));
     if(!!t.white!==S.white)await setColour(!!t.white);
     if(S.nodes.size>1&&!confirm('Replace your current '+(S.white?'White':'Black')+' tree with this file?'))return;
-    act(async()=>{t.positions?fromOld(t):load(t)})}
+    act(async()=>{load(t)})}
   catch(err){toast('Could not load file: '+err.message)}};
 const cg=Chessground($('#board'),{coordinates:false,animation:{duration:200},highlight:{lastMove:true,check:true},
   draggable:{showGhost:true},premovable:{enabled:false},movable:{free:false,showDests:true,events:{after:async(from,to)=>{
@@ -232,8 +241,9 @@ function render(){
   $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
   const rows=n.moves.map(m=>{const t=S.nodes.get(m.to),w=userTurn(n)?0:Math.round(2**m.p*100);
     return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td style="background:linear-gradient(90deg,rgba(98,153,36,.5) ${w}%,transparent ${w}%)">${userTurn(n)?'—':pct(m.p)}</td><td>${pct(t.prob)}</td></tr>`}).join('');
-  $('#moves').innerHTML=rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
-    :`<span class="mut">${userTurn(n)?'No moves yet — play one on the board.':'No Lichess games for this position — you can play a move for your opponent on the board.'}</span>`;
+  $('#moves').innerHTML=(!userTurn(n)&&n.exp&&!n.N?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
+    +(rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
+    :`<span class="mut">${userTurn(n)?'No moves yet — play one on the board.':'No moves available.'}</span>`);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
   $('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';
   $('#settings').innerHTML=`<p class="mut">Press F to flip the board.</p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
@@ -267,9 +277,7 @@ async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(c
 
 /* ---------- start ---------- */
 let w0=ls('colour')!=='b';
-try{const lg=ls('tree'); // migrate the old single-tree autosave into its colour's slot
-  if(lg){const o=JSON.parse(lg);if(!ls(slot(!!o.white)))ls(slot(!!o.white),lg);if(!ls('colour'))w0=!!o.white;ls('tree','')}
-  const t=ls(slot(w0));if(t)load(JSON.parse(t));else blank(w0)}catch{blank(w0)}
+try{const t=ls(slot(w0));if(t)load(JSON.parse(t));else blank(w0)}catch{blank(w0)}
 applyTheme();finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
