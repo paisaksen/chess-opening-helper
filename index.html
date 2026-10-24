@@ -4,7 +4,7 @@
 <title>Opening Builder</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.base.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.brown.css">
+<style id="boardcss"></style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.cburnett.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <style>
@@ -28,6 +28,12 @@ td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rg
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
+#boardwrap{position:relative}
+#promo{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
+#promo.show{display:flex}#promo .pbox{display:flex;gap:4px;padding:6px;background:var(--card);border-radius:8px}
+#promo button{position:relative;width:min(16vw,84px);aspect-ratio:1;padding:0}
+#promo piece{position:absolute;inset:0;width:100%;height:100%;display:block}
+.cg-wrap coords{color:rgba(0,0,0,.55);font-weight:700}
 .out main,.out header button{display:none}
 .seg{display:inline-flex}.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0;margin-left:-1px}
 </style>
@@ -41,7 +47,7 @@ td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rg
 <p>Build an opening tree around the positions that actually come up most often in Lichess games.</p>
 <p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
 <button data-a="auth" class="on">Log in with Lichess</button></div></section>
-<main><section id="left"><div id="board"></div><div id="pathline"></div></section>
+<main><section id="left"><div id="boardwrap"><div id="board"></div><div id="promo" class="cg-wrap"></div></div><div id="pathline"></div></section>
 <aside><div class="card" id="info"></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
@@ -55,9 +61,17 @@ const ALL_S=['ultraBullet','bullet','blitz','rapid','classical','correspondence'
 const ALL_R=['0','1000','1200','1400','1600','1800','2000','2200','2500'];
 const $=s=>document.querySelector(s);
 const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch{return null}};
-let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
+let cfg={theme:'blue',token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
 let S=null,busy=false;
+const THEMES={blue:['#dee3e6','#8ca2ad'],brown:['#f0d9b5','#b58863'],green:['#ffffdd','#86a666']};
+function applyTheme(){const [l,d]=THEMES[cfg.theme]||THEMES.blue;let q='';
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2)q+=`M${c} ${r}h1v1h-1z`;
+  const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'><path fill='${d}' d='${q}'/></svg>`;
+  $('#boardcss').textContent=`cg-board{background-color:${l};background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")}`}
+function askPromo(color){return new Promise(res=>{const el=$('#promo');
+  el.innerHTML='<div class="pbox">'+[['queen','q'],['rook','r'],['bishop','b'],['knight','n']].map(([r,l])=>`<button data-p="${l}"><piece class="${r} ${color}"></piece></button>`).join('')+'</div>';
+  el.classList.add('show');el.onclick=e=>{const b=e.target.closest('[data-p]');el.classList.remove('show');res(b?b.dataset.p:null)}})}
 
 /* ---------- tree model ---------- */
 function blank(white,undo){S={white,flip:false,limit:-Infinity,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[]};node(START_FEN)}
@@ -81,10 +95,14 @@ function recompute(){ // total probability of reaching each position (summed ove
   for(const k of order.reverse()){const n=N.get(k);for(const m of n.moves){if(back.has(m))continue;
     const t=N.get(m.to),v=n.prob+m.p;t.prob=lse(t.prob,v);if(v>t.bv){t.bv=v;t.par=k}}}}
 function pathTo(k){const p=[k];while(p[0]!==START&&S.nodes.get(p[0]).par)p.unshift(S.nodes.get(p[0]).par);return p}
-function nextLeaf(){let best=null;const seen=new Set();
+function nextLine(){ // best unfinished line inside the focus; returns the full route (through the focus root)
+  let best=null;const from=new Map(),seen=new Set();
   (function w(k){if(seen.has(k))return;seen.add(k);const n=S.nodes.get(k);if(n.ignore)return;
-    if(!n.moves.length){if(n.prob>=S.limit&&(!best||n.prob>best.prob)&&!over(n))best=n;return}
-    n.moves.forEach(m=>w(m.to))})(S.focus);return best}
+    if(!n.moves.length){if(userTurn(n)&&n.prob>=S.limit&&(!best||n.prob>best.prob)&&!over(n))best=n;return}
+    for(const m of n.moves){if(m.to!==S.focus&&!from.has(m.to))from.set(m.to,k);w(m.to)}})(S.focus);
+  if(!best)return null;
+  const rt=[best.k];while(rt[0]!==S.focus)rt.unshift(from.get(rt[0]));
+  const i=S.path.indexOf(S.focus);return[...(i>=0?S.path.slice(0,i+1):pathTo(S.focus)),...rt.slice(1)]}
 async function fetchOpp(n){
   const u=`https://explorer.lichess.ovh/lichess?speeds=${cfg.speeds}&ratings=${cfg.ratings}&moves=99&fen=${encodeURIComponent(n.fen)}`;
   const r=await fetch(u,{headers:cfg.token?{Authorization:'Bearer '+cfg.token}:{}});
@@ -95,6 +113,7 @@ async function fetchOpp(n){
 async function enter(p){ // move to a position; fetch + auto-play the most common reply if the opponent is to move with no data
   S.path=p;const n=cur();
   if(!n.moves.length&&!userTurn(n)&&!over(n)){await fetchOpp(n);recompute();
+    if(!n.moves.length)toast('Lichess has no games for this position with the current filters.');
     const m=n.moves[0];if(m&&n.prob+m.p>=S.limit)S.path=[...p,m.to]}
   if(S.stay)S.focus=S.path.at(-1)}
 async function userMove(uci){const n=cur();
@@ -128,6 +147,9 @@ async function act(fn){if(busy)return;busy=true;const s=JSON.stringify(ser());
   try{await fn();S.undo.push(s);if(S.undo.length>30)S.undo.shift()}
   catch(e){load(JSON.parse(s));toast(e.message)}
   busy=false;recompute();render();persist()}
+async function nav(fn){if(busy)return;busy=true;const p0=S.path,f0=S.focus;
+  try{await fn();if(S.stay)S.focus=S.path.at(-1)}catch(e){S.path=p0;S.focus=f0;toast(e.message)}
+  busy=false;recompute();render();persist()}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000)}
 const A={
   colW:()=>setColour(true),
@@ -137,12 +159,18 @@ const A={
   load:()=>$('#file').click(),
   auth:()=>cfg.token?logout():login(),
   save(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(ser())],{type:'application/json'}));a.download=(S.white?'white':'black')+'-opening-tree.json';a.click()},
-  next:()=>act(async()=>{const b=nextLeaf();if(!b)throw Error('No unfinished lines left (check focus and limit).');await enter(pathTo(b.k))}),
-  back:()=>act(async()=>{if(S.path.length<2)return;const was=S.path.at(-1);S.path=S.path.slice(0,-1);if(S.focus===was)S.focus=S.path.at(-1)}),
+  next:()=>nav(async()=>{const r=nextLine();if(!r)throw Error('No unfinished lines left (check focus and limit).');await enter(r)}),
+  back:()=>nav(async()=>{if(S.path.length>1)S.path=S.path.slice(0,-1)}),
+  fwd:()=>nav(async()=>{const n=cur();let b=null;
+    for(const m of n.moves){const t=S.nodes.get(m.to);if(!t.ignore&&(!b||t.prob>b.t.prob))b={m,t}}
+    if(!b){if(!n.moves.length&&!userTurn(n)&&!over(n))return enter(S.path);throw Error('No further moves in the tree.')}
+    await enter([...S.path,b.m.to])}),
+  root:()=>nav(async()=>{const i=S.path.indexOf(S.focus);S.path=i>=0?S.path.slice(0,i+1):pathTo(S.focus)}),
   undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
-  focus:()=>act(async()=>{S.focus=S.focus===cur().k?START:cur().k}),
+  focus:()=>act(async()=>{S.focus=cur().k}),
   unfocus:()=>act(async()=>{S.focus=START}),
-  prune:()=>act(async()=>{const n=cur();n.ignore=!n.ignore;if(n.ignore)S.path=pathTo(S.focus)}),
+  prune:()=>act(async()=>{const n=cur();if(n.k===START)throw Error('Cannot prune the starting position.');
+    n.ignore=!n.ignore;if(n.ignore){S.path=S.path.slice(0,-1);if(S.focus===n.k)S.focus=S.path.at(-1)}}),
   stay:()=>act(async()=>{S.stay=!S.stay}),
   flip(){S.flip=!S.flip;render()},
   del:()=>act(async()=>{const n=cur();if(S.path.length<2)throw Error('Cannot delete the starting position.');
@@ -154,8 +182,9 @@ const A={
     if(!S.nodes.has(S.focus))S.focus=START})};
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b)A[b.dataset.a]();
   const r=e.target.closest('[data-mv]');if(r)act(async()=>userMove(r.dataset.mv))});
-document.addEventListener('keydown',e=>{if(/INPUT|SELECT/.test(e.target.tagName))return;
-  if(e.key==='ArrowLeft')A.back();if(e.key==='n')A.next()});
+document.addEventListener('keydown',e=>{
+  if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||e.ctrlKey||e.metaKey||e.altKey||!S||$('#promo').classList.contains('show')||document.documentElement.classList.contains('out'))return;
+  const k={ArrowLeft:'back',ArrowRight:'fwd',ArrowUp:'root',n:'next',N:'next',f:'flip',F:'flip'}[e.key];if(k){e.preventDefault();A[k]()}});
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';
   try{const t=JSON.parse((await f.text()).replace(/-Infinity/g,'null'));
     if(!!t.white!==S.white)await setColour(!!t.white);
@@ -163,29 +192,31 @@ $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.va
     act(async()=>{t.positions?fromOld(t):load(t)})}
   catch(err){toast('Could not load file: '+err.message)}};
 const cg=Chessground($('#board'),{coordinates:true,animation:{duration:200},highlight:{lastMove:true,check:true},
-  draggable:{showGhost:true},premovable:{enabled:false},movable:{free:false,showDests:true,events:{after:(from,to)=>{
-    const m=new Chess(cur().fen).moves({verbose:true}).find(x=>x.from===from&&x.to===to);
-    if(busy||!m)return render();act(()=>userMove(from+to+(m.flags.includes('p')?'q':'')))}}}}); // promotions auto-queen
+  draggable:{showGhost:true},premovable:{enabled:false},movable:{free:false,showDests:true,events:{after:async(from,to)=>{
+    const ms=new Chess(cur().fen).moves({verbose:true}).filter(x=>x.from===from&&x.to===to);
+    if(busy||!ms.length)return render();
+    let pr='';if(ms[0].flags.includes('p')){pr=await askPromo(ms[0].color==='w'?'white':'black');if(!pr)return render()}
+    act(()=>userMove(from+to+pr))}}}});
 
 /* ---------- rendering ---------- */
 const pct=lp=>{const v=2**lp*100;return(v>=1?v.toFixed(1):v.toFixed(3))+'%'};
+function sanOf(path){let t='';path.slice(1).forEach((k,i)=>{const m=S.nodes.get(path[i]).moves.find(m=>m.to===k);if(m)t+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});return t.trim()}
 function render(){
-  document.documentElement.classList.toggle('out',!cfg.token);
+  document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
   cg.set({fen:n.fen.split(' ')[0],orientation:bw?'white':'black',turnColor:col,check:c.in_check()?col:false,lastMove:last||null,
     movable:{color:col,dests}});
-  let pl='',cc=new Chess();S.path.slice(1).forEach((k,i)=>{const m=S.nodes.get(S.path[i]).moves.find(m=>m.to===k);
-    if(m)pl+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});
-  $('#pathline').textContent=pl||'Starting position';
+  $('#pathline').textContent=sanOf(S.path)||'Starting position';
   const end=c.in_checkmate()?'Checkmate.':c.in_stalemate()?'Stalemate.':c.in_draw()?'Draw.':'';
   $('#info').innerHTML=`<b>${userTurn(n)?'Your move':"Opponent's move"}</b> ${end}<br>
    <span class="mut">${pct(n.prob)} of games reach this position (log₂ ${n.prob.toFixed(2)})</span><br>
-   <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focused on a sub-tree'}${n.ignore?' · <b>pruned</b>':''}</span>`;
-  $('#btns').innerHTML=[['next','Next line (n)'],['back','◀ Back'],['undo','Undo'],['focus',S.focus===n.k?'Unfocus':'Focus here'],
-    ['prune',n.ignore?'Revive branch':'Prune branch'],['del','Delete'],['flip','Flip board'],['stay','Stay with line'+(S.stay?' ✓':'')]]
+   <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
+  $('#btns').innerHTML=[['next','Next line (n)'],['back','◀ Back (←)'],['fwd','Forward ▶ (→)'],['root','Focus root ▲ (↑)'],['undo','Undo'],
+    ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
+    ['prune',n.ignore?'Revive branch':'Prune branch'],['del','Delete'],['stay','Stay with line'+(S.stay?' ✓':'')]]
     .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&S.stay?' class="on"':''}>${t}</button>`).join('')+
     `<label class="mut" style="margin-top:6px">Limit (log₂, e.g. −5 ≈ 1 in 32 games)
      <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`;
@@ -196,11 +227,12 @@ function render(){
     :`<span class="mut">No moves yet — play one on the board.</span>`;
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
   $('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';
-  $('#settings').innerHTML=`<p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
+  $('#settings').innerHTML=`<p>Board: <select id="theme">${Object.keys(THEMES).map(t=>`<option${cfg.theme===t?' selected':''}>${t}</option>`).join('')}</select> <span class="mut">(F flips the board)</span></p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
    <p>Ratings:<br>${ALL_R.map(s=>`<label><input type="checkbox" data-cr="${s}"${cfg.ratings.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>`;
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
     cfg.speeds=[...document.querySelectorAll('[data-cs]:checked')].map(x=>x.dataset.cs);
-    cfg.ratings=[...document.querySelectorAll('[data-cr]:checked')].map(x=>x.dataset.cr);ls('cfg',JSON.stringify(cfg))})}
+    cfg.ratings=[...document.querySelectorAll('[data-cr]:checked')].map(x=>x.dataset.cr);ls('cfg',JSON.stringify(cfg))});
+  $('#theme').onchange=e=>{cfg.theme=e.target.value;ls('cfg',JSON.stringify(cfg));applyTheme()}}
 
 /* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
 const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
@@ -230,6 +262,6 @@ let w0=ls('colour')!=='b';
 try{const lg=ls('tree'); // migrate the old single-tree autosave into its colour's slot
   if(lg){const o=JSON.parse(lg);if(!ls(slot(!!o.white)))ls(slot(!!o.white),lg);if(!ls('colour'))w0=!!o.white;ls('tree','')}
   const t=ls(slot(w0));if(t)load(JSON.parse(t));else blank(w0)}catch{blank(w0)}
-finishLogin();
+applyTheme();finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
