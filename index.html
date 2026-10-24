@@ -26,11 +26,20 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;col
 td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rgba(120,120,120,.15)}
 .mut{color:var(--mut);font-size:13px}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
-</style></head><body>
+#gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
+#gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
+.out main,.out header button{display:none}
+</style>
+<script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
+</head><body>
 <header><h1>♞ Opening Builder</h1>
 <button data-a="newW">New (White)</button><button data-a="newB">New (Black)</button>
 <button data-a="load">Load…</button><button data-a="save">Save</button><button id="auth" data-a="auth">Log in with Lichess</button>
 <input type="file" id="file" accept=".json" hidden></header>
+<section id="gate"><div class="card"><h2>♞ Opening Builder</h2>
+<p>Build an opening tree around the positions that actually come up most often in Lichess games.</p>
+<p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
+<button data-a="auth" class="on">Log in with Lichess</button></div></section>
 <main><section id="left"><div id="board"></div><div id="pathline"></div></section>
 <aside><div class="card" id="info"></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
@@ -148,6 +157,7 @@ const cg=Chessground($('#board'),{coordinates:true,animation:{duration:200},high
 /* ---------- rendering ---------- */
 const pct=lp=>{const v=2**lp*100;return(v>=1?v.toFixed(1):v.toFixed(3))+'%'};
 function render(){
+  document.documentElement.classList.toggle('out',!cfg.token);
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map(),ut=userTurn(n);
@@ -189,6 +199,7 @@ async function login(){
     code_challenge_method:'S256',code_challenge:b64(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v))),state:st})}
 async function finishLogin(){
   const q=new URLSearchParams(location.search),code=q.get('code');if(!code)return;
+  $('#gate-msg').textContent='Logging in…';
   history.replaceState(null,'',REDIR);const [v,st]=(ls('pkce')||'|').split('|');ls('pkce','');
   try{if(!v||q.get('state')!==st)throw Error('state mismatch');
     const r=await fetch('https://lichess.org/api/token',{method:'POST',body:new URLSearchParams({grant_type:'authorization_code',
@@ -196,12 +207,13 @@ async function finishLogin(){
     const d=await r.json();if(!r.ok||!d.access_token)throw Error(d.error_description||d.error||r.status);
     cfg.token=d.access_token;ls('cfg',JSON.stringify(cfg))}
   catch(e){toast('Lichess login failed: '+e.message)}
-  render()}
+  $('#gate-msg').textContent='The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.';
+  act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])})}
 async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(cfg));render();
   try{await fetch('https://lichess.org/api/token',{method:'DELETE',headers:{Authorization:'Bearer '+t}})}catch{}}
 
 /* ---------- start ---------- */
 try{const t=ls('tree');if(t)load(JSON.parse(t));else blank(true)}catch{blank(true)}
 finishLogin();
-act(async()=>{if(S.path.length===1)await enter([START])});
+act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
