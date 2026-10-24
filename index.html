@@ -30,7 +30,7 @@ td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rg
 </style></head><body>
 <header><h1>♞ Opening Builder</h1>
 <button data-a="newW">New (White)</button><button data-a="newB">New (Black)</button>
-<button data-a="load">Load…</button><button data-a="save">Save</button>
+<button data-a="load">Load…</button><button data-a="save">Save</button><button id="auth" data-a="auth">Log in with Lichess</button>
 <input type="file" id="file" accept=".json" hidden></header>
 <main><section id="left"><div id="board"></div><div id="pathline"></div></section>
 <aside><div class="card" id="info"></div><div class="card"><div class="btns" id="btns"></div></div>
@@ -79,7 +79,8 @@ function nextLeaf(){let best=null;const seen=new Set();
 async function fetchOpp(n){
   const u=`https://explorer.lichess.ovh/lichess?speeds=${cfg.speeds}&ratings=${cfg.ratings}&moves=99&fen=${encodeURIComponent(n.fen)}`;
   const r=await fetch(u,{headers:cfg.token?{Authorization:'Bearer '+cfg.token}:{}});
-  if(!r.ok)throw Error('Lichess API error '+r.status+(r.status===401?' – add your API token in Settings':''));
+  if(!r.ok){if(r.status===401&&cfg.token){cfg.token='';ls('cfg',JSON.stringify(cfg))}
+    throw Error('Lichess API error '+r.status+(r.status===401?' – please log in with Lichess (top right)':''))}
   const d=await r.json(),tot=d.white+d.draws+d.black;
   if(tot>0)for(const x of d.moves)addMove(n,x.uci,Math.log2((x.white+x.draws+x.black)/tot))}
 async function enter(p){ // move to a position; fetch + auto-play the most common reply if the opponent is to move with no data
@@ -117,6 +118,7 @@ const A={
   newW:()=>act(async()=>{blank(true,S.undo);await enter([START])}),
   newB:()=>act(async()=>{blank(false,S.undo);await enter([START])}),
   load:()=>$('#file').click(),
+  auth:()=>cfg.token?logout():login(),
   save(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(ser())],{type:'application/json'}));a.download='opening-tree.json';a.click()},
   next:()=>act(async()=>{const b=nextLeaf();if(!b)throw Error('No unfinished lines left (check focus and limit).');await enter(pathTo(b.k))}),
   back:()=>act(async()=>{if(S.path.length<2)return;const was=S.path.at(-1);S.path=S.path.slice(0,-1);if(S.focus===was)S.focus=S.path.at(-1)}),
@@ -171,16 +173,36 @@ function render(){
     return`<tr data-mv="${m.uci}"><td>${m.san}${t.ignore?' ✂':''}</td><td>${userTurn(n)?'—':pct(m.p)}</td><td>${pct(t.prob)}</td></tr>`}).join('');
   $('#moves').innerHTML=rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
     :`<span class="mut">No moves yet — play one on the board.</span>`;
-  $('#settings').innerHTML=`<p><label>Lichess API token <input id="tok" type="password" value="${cfg.token}" size="24" placeholder="lip_…"></label><br>
-   <span class="mut">Saved only in this browser. Never commit it to GitHub.</span></p>
-   <p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
+  $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
+  $('#settings').innerHTML=`<p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
    <p>Ratings:<br>${ALL_R.map(s=>`<label><input type="checkbox" data-cr="${s}"${cfg.ratings.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>`;
-  $('#tok').onchange=e=>{cfg.token=e.target.value.trim();ls('cfg',JSON.stringify(cfg))};
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
     cfg.speeds=[...document.querySelectorAll('[data-cs]:checked')].map(x=>x.dataset.cs);
     cfg.ratings=[...document.querySelectorAll('[data-cr]:checked')].map(x=>x.dataset.cr);ls('cfg',JSON.stringify(cfg))})}
 
+/* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
+const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
+const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function login(){
+  const v=b64(crypto.getRandomValues(new Uint8Array(32))),st=b64(crypto.getRandomValues(new Uint8Array(16)));
+  ls('pkce',v+'|'+st);
+  location.href='https://lichess.org/oauth?'+new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:REDIR,
+    code_challenge_method:'S256',code_challenge:b64(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v))),state:st})}
+async function finishLogin(){
+  const q=new URLSearchParams(location.search),code=q.get('code');if(!code)return;
+  history.replaceState(null,'',REDIR);const [v,st]=(ls('pkce')||'|').split('|');ls('pkce','');
+  try{if(!v||q.get('state')!==st)throw Error('state mismatch');
+    const r=await fetch('https://lichess.org/api/token',{method:'POST',body:new URLSearchParams({grant_type:'authorization_code',
+      code,code_verifier:v,redirect_uri:REDIR,client_id:CLIENT_ID})});
+    const d=await r.json();if(!r.ok||!d.access_token)throw Error(d.error_description||d.error||r.status);
+    cfg.token=d.access_token;ls('cfg',JSON.stringify(cfg))}
+  catch(e){toast('Lichess login failed: '+e.message)}
+  render()}
+async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(cfg));render();
+  try{await fetch('https://lichess.org/api/token',{method:'DELETE',headers:{Authorization:'Bearer '+t}})}catch{}}
+
 /* ---------- start ---------- */
 try{const t=ls('tree');if(t)load(JSON.parse(t));else blank(true)}catch{blank(true)}
+finishLogin();
 act(async()=>{if(S.path.length===1)await enter([START])});
 </script></body></html>
