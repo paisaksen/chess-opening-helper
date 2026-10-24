@@ -2,21 +2,20 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Opening Builder</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.base.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.brown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.cburnett.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <style>
-:root{--bg:#f6f5f2;--fg:#222;--card:#fff;--bd:#d8d6d0;--lt:#ecd9b5;--dk:#b58863;--ac:#2f6fed;--mut:#777}
-@media(prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#e8e8e8;--card:#2a2a2d;--bd:#444;--lt:#cdb88f;--dk:#8a6a49;--ac:#6b9bff;--mut:#999}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif}
+:root{--bg:#f7f6f5;--fg:#4d4d4d;--card:#fff;--bd:#d9d9d9;--ac:#629924;--mut:#8a8a8a}
+@media(prefers-color-scheme:dark){:root{--bg:#161512;--fg:#bababa;--card:#262421;--bd:#3c3a37;--ac:#629924;--mut:#8a8784}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px "Noto Sans",system-ui,sans-serif}
 header{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--bd)}
 header h1{font-size:17px;margin:0 auto 0 0}
 main{display:flex;gap:16px;flex-wrap:wrap;padding:16px;max-width:1100px;margin:auto}
 #left{flex:1 1 360px;max-width:560px}aside{flex:1 1 320px;display:flex;flex-direction:column;gap:12px}
-#board{display:grid;grid-template-columns:repeat(8,1fr);aspect-ratio:1;border:2px solid var(--dk);user-select:none}
-.sq{display:flex;align-items:center;justify-content:center;font-size:min(8vw,46px);cursor:pointer;position:relative;line-height:1}
-.l{background:var(--lt)}.d{background:var(--dk)}.last::before{content:"";position:absolute;inset:0;background:rgba(255,220,0,.4)}
-.sel::before{content:"";position:absolute;inset:0;background:rgba(80,160,255,.55)}
-.tgt::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(40,40,40,.35)}
-.pw{color:#fff;text-shadow:0 0 2px #000,0 0 2px #000,0 0 1px #000}.pb{color:#111}.pc{position:relative;z-index:1}
+#board{width:100%;aspect-ratio:1/1}
 #pathline{margin-top:8px;color:var(--mut);font-size:13px;min-height:2.6em}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px}
 button,select,input{font:inherit;color:inherit}
@@ -37,18 +36,18 @@ td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rg
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
 <div id="toast"></div>
-<script>
+<script type="module">
+import {Chessground} from 'https://cdn.jsdelivr.net/npm/chessground@9/+esm';
 const START_FEN='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const key=f=>f.split(' ').slice(0,3).join(' ');
 const START=key(START_FEN);
 const ALL_S=['ultraBullet','bullet','blitz','rapid','classical','correspondence'];
 const ALL_R=['0','1000','1200','1400','1600','1800','2000','2200','2500'];
-const GL={k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟\uFE0E'};
 const $=s=>document.querySelector(s);
 const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch{return null}};
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
-let S=null,sel=null,busy=false;
+let S=null,busy=false;
 
 /* ---------- tree model ---------- */
 function blank(white,undo){S={white,flip:false,limit:-Infinity,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[]};node(START_FEN)}
@@ -112,7 +111,7 @@ const persist=()=>ls('tree',JSON.stringify(ser()));
 async function act(fn){if(busy)return;busy=true;const s=JSON.stringify(ser());
   try{await fn();S.undo.push(s);if(S.undo.length>30)S.undo.shift()}
   catch(e){load(JSON.parse(s));toast(e.message)}
-  busy=false;sel=null;recompute();render();persist()}
+  busy=false;recompute();render();persist()}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000)}
 const A={
   newW:()=>act(async()=>{blank(true,S.undo);await enter([START])}),
@@ -122,7 +121,7 @@ const A={
   save(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(ser())],{type:'application/json'}));a.download='opening-tree.json';a.click()},
   next:()=>act(async()=>{const b=nextLeaf();if(!b)throw Error('No unfinished lines left (check focus and limit).');await enter(pathTo(b.k))}),
   back:()=>act(async()=>{if(S.path.length<2)return;const was=S.path.at(-1);S.path=S.path.slice(0,-1);if(S.focus===was)S.focus=S.path.at(-1)}),
-  undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));sel=null;render();persist()},
+  undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
   focus:()=>act(async()=>{S.focus=S.focus===cur().k?START:cur().k}),
   unfocus:()=>act(async()=>{S.focus=START}),
   prune:()=>act(async()=>{const n=cur();n.ignore=!n.ignore;if(n.ignore)S.path=pathTo(S.focus)}),
@@ -141,21 +140,21 @@ document.addEventListener('keydown',e=>{if(/INPUT|SELECT/.test(e.target.tagName)
   if(e.key==='ArrowLeft')A.back();if(e.key==='n')A.next()});
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';
   act(async()=>{const t=JSON.parse((await f.text()).replace(/-Infinity/g,'null'));t.positions?fromOld(t):load(t)})};
-$('#board').onclick=e=>{const sq=e.target.closest('[data-sq]')?.dataset.sq;if(!sq||busy)return;
-  const c=new Chess(cur().fen);
-  if(sel){const mv=c.moves({square:sel,verbose:true}).find(m=>m.to===sq);
-    if(mv){const u=sel+sq+(mv.flags.includes('p')?'q':'');return act(()=>userMove(u))}} // promotions auto-queen
-  const p=c.get(sq);sel=p&&p.color===c.turn()?sq:null;render()};
+const cg=Chessground($('#board'),{coordinates:true,animation:{duration:200},highlight:{lastMove:true,check:true},
+  draggable:{showGhost:true},premovable:{enabled:false},movable:{free:false,showDests:true,events:{after:(from,to)=>{
+    const m=new Chess(cur().fen).moves({verbose:true}).find(x=>x.from===from&&x.to===to);
+    if(busy||!m)return render();act(()=>userMove(from+to+(m.flags.includes('p')?'q':'')))}}}}); // promotions auto-queen
 
 /* ---------- rendering ---------- */
 const pct=lp=>{const v=2**lp*100;return(v>=1?v.toFixed(1):v.toFixed(3))+'%'};
 function render(){
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
-  const tg=sel?c.moves({square:sel,verbose:true}).map(m=>m.to):[];let h='';
-  for(let r=0;r<8;r++)for(let f=0;f<8;f++){const rk=bw?7-r:r,fl=bw?f:7-f,sq='abcdefgh'[fl]+(rk+1),p=c.get(sq);
-    h+=`<div class="sq ${(rk+fl)%2?'l':'d'}${last&&last.includes(sq)?' last':''}${sel===sq?' sel':''}${tg.includes(sq)?' tgt':''}" data-sq="${sq}">${p?`<span class="pc ${p.color==='w'?'pw':'pb'}">${GL[p.type]}</span>`:''}</div>`}
-  $('#board').innerHTML=h;
+  const col=c.turn()==='w'?'white':'black',dests=new Map(),ut=userTurn(n);
+  c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
+  cg.set({fen:n.fen.split(' ')[0],orientation:bw?'white':'black',turnColor:col,check:c.in_check()?col:false,lastMove:last||null,
+    movable:{color:col,dests},drawable:{autoShapes:n.moves.slice(0,ut?20:6).map(m=>({orig:m.uci.slice(0,2),dest:m.uci.slice(2,4),
+      brush:ut?'blue':'green',modifiers:{lineWidth:ut?8:Math.max(4,Math.round(2**m.p*16))}}))}});
   let pl='',cc=new Chess();S.path.slice(1).forEach((k,i)=>{const m=S.nodes.get(S.path[i]).moves.find(m=>m.to===k);
     if(m)pl+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});
   $('#pathline').textContent=pl||'Starting position';
@@ -169,8 +168,8 @@ function render(){
     `<label class="mut" style="margin-top:6px">Limit (log₂, e.g. −5 ≈ 1 in 32 games)
      <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`;
   $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
-  const rows=n.moves.map(m=>{const t=S.nodes.get(m.to);
-    return`<tr data-mv="${m.uci}"><td>${m.san}${t.ignore?' ✂':''}</td><td>${userTurn(n)?'—':pct(m.p)}</td><td>${pct(t.prob)}</td></tr>`}).join('');
+  const rows=n.moves.map(m=>{const t=S.nodes.get(m.to),w=userTurn(n)?0:Math.round(2**m.p*100);
+    return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td style="background:linear-gradient(90deg,rgba(98,153,36,.5) ${w}%,transparent ${w}%)">${userTurn(n)?'—':pct(m.p)}</td><td>${pct(t.prob)}</td></tr>`}).join('');
   $('#moves').innerHTML=rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
     :`<span class="mut">No moves yet — play one on the board.</span>`;
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
