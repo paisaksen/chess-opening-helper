@@ -160,11 +160,10 @@ function render(){
   document.documentElement.classList.toggle('out',!cfg.token);
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
-  const col=c.turn()==='w'?'white':'black',dests=new Map(),ut=userTurn(n);
+  const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
   cg.set({fen:n.fen.split(' ')[0],orientation:bw?'white':'black',turnColor:col,check:c.in_check()?col:false,lastMove:last||null,
-    movable:{color:col,dests},drawable:{autoShapes:n.moves.slice(0,ut?20:6).map(m=>({orig:m.uci.slice(0,2),dest:m.uci.slice(2,4),
-      brush:ut?'blue':'green',modifiers:{lineWidth:ut?8:Math.max(4,Math.round(2**m.p*16))}}))}});
+    movable:{color:col,dests}});
   let pl='',cc=new Chess();S.path.slice(1).forEach((k,i)=>{const m=S.nodes.get(S.path[i]).moves.find(m=>m.to===k);
     if(m)pl+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});
   $('#pathline').textContent=pl||'Starting position';
