@@ -26,7 +26,13 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;col
 td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rgba(120,120,120,.15)}
 .mut{color:var(--mut);font-size:13px}
 #moves{max-height:55vh;overflow:auto}
-aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{display:block}.bad{color:#d9534f}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
+aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{display:block}.bad{color:#d9534f}
+.cg-wrap square.last-move{background-color:rgba(155,199,0,.41)}
+.cg-wrap square.selected{background-color:rgba(20,85,30,.5)}
+.cg-wrap square.check{background:radial-gradient(ellipse at center,rgba(255,0,0,1) 0%,rgba(231,0,0,1) 25%,rgba(169,0,0,0) 89%,rgba(158,0,0,0) 100%)}
+.cg-wrap square.move-dest{background:radial-gradient(rgba(20,85,30,.5) 22%,#208530 0,rgba(0,0,0,.3) 0,rgba(0,0,0,0) 0)}
+.cg-wrap square.oc.move-dest{background:radial-gradient(transparent 0%,transparent 80%,rgba(20,85,30,.3) 80%)}
+.cg-wrap square.move-dest:hover{background:rgba(20,85,30,.3)}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
@@ -70,7 +76,7 @@ const $=s=>document.querySelector(s);
 const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch{return null}};
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
-let S=null,busy=false,mode='b';const B={path:[START]},P={phase:'none',id:0,failed:false,msg:'',note:'',stop:false};
+let S=null,busy=false,mode='b';const B={path:[START]},P={phase:'none',id:0,failed:false,msg:'',note:'',stop:false,cont:false};
 function applyTheme(){const l='#ecdab9',d='#ae8a68';let q='';
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2)q+=`M${c} ${r}h1v1h-1z`;
   const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'><path fill='${d}' d='${q}'/></svg>`;
@@ -222,7 +228,7 @@ const cg=Chessground($('#board'),{coordinates:false,animation:{duration:200},hig
     act(()=>userMove(from+to+pr))}}}});
 
 /* ---------- rendering ---------- */
-const pct=lp=>{const v=2**lp*100;return(v>=1?v.toFixed(1):v.toFixed(3))+'%'};
+const pct=lp=>{if(lp===-Infinity)return'0%';const v=2**lp*100;return v>=0.1?(v>=1?v.toFixed(1):v.toFixed(2))+'%':'log₂ '+lp.toFixed(1)};
 function subtree(k){const seen=new Set(),out=[];(function w(k){if(seen.has(k))return;seen.add(k);const x=S.nodes.get(k);out.push(x);x.moves.forEach(m=>w(m.to))})(k);return out}
 function sanOf(path){let t='';path.slice(1).forEach((k,i)=>{const m=S.nodes.get(path[i]).moves.find(m=>m.to===k);if(m)t+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});return t.trim()}
 function render(){
@@ -241,7 +247,7 @@ function render(){
   if(mode==='p')return renderPractice();
   const end=c.in_checkmate()?'Checkmate.':c.in_stalemate()?'Stalemate.':c.in_draw()?'Draw.':'';
   $('#info').innerHTML=`<b>${userTurn(n)?'Your move':"Opponent's move"}</b> ${end}<br>
-   <span class="mut">${pct(n.prob)} of games reach this position (log₂ ${n.prob.toFixed(2)})</span><br>
+   <span class="mut">Reach probability: ${pct(n.prob)}</span><br>
    <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
   $('#btns').innerHTML=[['next','Next line (n)'],['back','◀ Back'],['fwd','Forward ▶'],['root','Focus root ▲'],['undo','Undo'],
     ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
@@ -283,17 +289,19 @@ function updateW(k){ // after a change at k: recompute k and its ancestors, chil
   [...seen].sort((a,b)=>S.pi.get(a)-S.pi.get(b)).forEach(x=>{const n=S.nodes.get(x);n.W=calcW(n)})}
 function pick(items){const t=items.reduce((a,x)=>a+x[0],0);if(!(t>0))return null;let r=Math.random()*t;
   for(const x of items){r-=x[0];if(r<0)return x[1]}return items.at(-1)[1]}
-async function advance(id){ // play the opponent's moves until you must answer, or the line ends
+async function advance(id){ // play the opponent's moves until you must answer, or the line ends (always after an opponent move)
   for(;;){const n=cur();
+    if(n.mate)return endLine('Checkmate.');
     if(userTurn(n)){
-      if(!n.moves.length){P.stop=true;return endLine('No response stored for this position yet. Build one in Build mode, or ignore the position.')}
-      P.stop=S.inF.has(n.k)&&Math.random()<(n.W>0?qOf(n)/n.W:1);P.phase='ask';return render()}
-    const m=pick(n.moves.map(m=>[2**m.p*wc(n,m),m]));
-    if(!m)return endLine('Line ended.');
+      if(!n.moves.length)return endLine('No response recorded for this position. Build one in Build mode, or ignore the position.');
+      P.stop=!P.cont&&S.inF.has(n.k)&&Math.random()<(n.W>0?qOf(n)/n.W:1);P.phase='ask';return render()}
+    const m=P.cont?pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])) // after the target: play on naturally
+      :pick(n.moves.map(m=>[2**m.p*wc(n,m),m]));
+    if(!m)return endLine(n.moves.length?'Line ended: no continuation left (the rest is ignored).':'No opponent data stored for this position.');
     await sleep(450);if(id!==P.id)return;
     S.path=[...S.path,m.to];render();
-    if(S.nodes.get(m.to).prob<S.plimit)return endLine('Line ended: this position is below your practice limit.')}}
-async function startLine(){P.id++;const id=P.id;P.failed=false;P.msg='';P.note='';S.path=[START];
+    if(S.nodes.get(m.to).prob<S.plimit)return endLine('Limit reached: this position is below your practice limit.')}}
+async function startLine(){P.id++;const id=P.id;P.failed=false;P.cont=false;P.msg='';P.note='';S.path=[START];
   if(!(S.nodes.get(START).W>0)){P.phase='none';return render()}
   P.phase='busy';render();await advance(id)}
 function endLine(note){P.phase='wait';P.note=note;render()}
@@ -307,7 +315,7 @@ async function attempt(from,to){
   if(!P.failed)n.r[0]++; // an answer that follows a failed attempt is not counted as correct
   P.failed=false;P.msg='';updateW(n.k);persist();
   S.path=[...S.path,m.to];
-  if(P.stop||!(S.nodes.get(m.to).W>0))return endLine('Correct! End of line.');
+  if(P.stop||!(S.nodes.get(m.to).W>0))P.cont=true; // target answered: keep playing until the limit or an unanswered position
   P.phase='busy';render();await advance(id)}
 function enterPractice(){B.path=S.path;mode='p';buildW();startLine()}
 function leavePractice(){P.id++;mode='b';S.path=B.path;render()}
@@ -320,6 +328,7 @@ Object.assign(A,{
     P.msg='The move is '+n.moves.map(m=>m.san).join(' or ')+'. Play it to continue.';updateW(n.k);persist();render()},
   pignore(){if(P.phase!=='ask'&&P.phase!=='wait')return;const n=cur();
     if(n.k===START)return toast('Cannot ignore the starting position.');n.pign=true;updateW(n.k);persist();startLine()},
+  pskip(){if(P.phase==='ask')startLine()},
   pnext(){if(P.phase==='wait'||P.phase==='none')startLine()},
   pclear(){for(const n of S.nodes.values())n.pign=false;buildW();persist();startLine()},
   preset(){if(!confirm('Erase all practice results for this colour?'))return;
@@ -331,7 +340,7 @@ function renderPractice(){
    ${ph==='busy'?'<p class="mut">…</p>':''}
    ${ph==='ask'?`<p><b>Your move.</b></p>${P.msg?`<p class="bad">${P.msg}</p>`:''}<p class="mut">This position: ${r[0]} right, ${r[1]} wrong</p>`:''}
    ${ph==='wait'?`<p><b>${P.note}</b></p>`:''}
-   <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
+   <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
    <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.plimit)?S.plimit:''}" placeholder="none"></label>
    <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
