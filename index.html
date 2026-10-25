@@ -273,17 +273,15 @@ function render(){
 /* ---------- practice mode ---------- */
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const qOf=n=>n.moves.length?((n.r?.[1]||0)+1)/((n.r?.[0]||0)+(n.r?.[1]||0)+2):1; // chance of getting this position wrong: (wrong+1)/(attempts+2); 1 if you have no move stored
-const wc=(n,m)=>S.back.has(m)||!(S.inF.has(n.k)||S.rel.has(m.to))?0:(S.nodes.get(m.to).M||0);
+const wc=(n,m)=>S.back.has(m)?0:(S.nodes.get(m.to).M||0);
 function calcM(n){ // M = total weight of the lines that run through n and end below it: reach × product of your wrong-chances along the line.
-  // Only reads the stored M of n's children. Lines must pass through the focus root and end inside the focus subtree.
-  if(n.pign||n.mate)return 0;
-  if(userTurn(n)){if(!n.moves.length)return S.inF.has(n.k)?1:0; // unanswered position: a line ends here, wrong-chance 1
+  // Only reads the stored M of n's children. Lines start at the focus position, so only the focus subtree has any weight.
+  if(n.pign||n.mate||!S.inF.has(n.k))return 0;
+  if(userTurn(n)){if(!n.moves.length)return 1; // unanswered position: a line ends here, wrong-chance 1
     let s=0;for(const m of n.moves)s+=wc(n,m);return qOf(n)*s/n.moves.length}
   let s=0;for(const m of n.moves)s+=2**m.p*wc(n,m);return s}
 function buildM(){ // full pass, used when entering practice mode or after a bulk change
   S.inF=new Set();(function d(k){if(S.inF.has(k))return;S.inF.add(k);S.nodes.get(k).moves.forEach(m=>d(m.to))})(S.focus);
-  S.rel=new Set([S.focus]);const st=[S.focus];
-  while(st.length){const k=st.pop();for(const p of S.parents.get(k)||[])if(!S.rel.has(p)){S.rel.add(p);st.push(p)}}
   for(const k of S.post){const n=S.nodes.get(k);n.M=calcM(n)}}
 function flushM(){ // after a line: recompute the answered positions and their ancestors in one pass, children first
   if(!P.pending.size)return;const seen=new Set(P.pending),st=[...P.pending];
@@ -296,15 +294,16 @@ async function advance(id){ // play the opponent's moves until you must answer, 
     if(n.mate)return endLine('Checkmate.');
     if(userTurn(n)){
       if(!n.moves.length)return endLine('No response recorded for this position. Build one in Build mode, or ignore the position.');
+      if(n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Line ended: all continuations are ignored.'); // nothing left to practise from here
       P.phase='ask';P.wrongs=0;P.reveal='';P.failed=false;P.msg='';return render()}
     const m=pick(n.moves.map(m=>[2**m.p*wc(n,m),m])) // normal case: follow the weights
       ||pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])); // you left the planned line: play on naturally
-    if(!m)return endLine(n.moves.length?'Line ended: every continuation is ignored.':'No opponent data stored for this position.');
+    if(!m)return endLine(n.moves.length?'Line ended: all continuations are ignored.':'No opponent data stored for this position.');
     await sleep(450);if(id!==P.id)return;
     S.path=[...S.path,m.to];render();
     if(S.nodes.get(m.to).prob<S.plimit)return endLine('Limit reached: this position is below your practice limit.')}}
-async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';S.path=[START];
-  if(!(S.nodes.get(START).M>0)){P.phase='none';return render()}
+async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';S.path=pathTo(S.focus);
+  if(!(S.nodes.get(S.focus).M>0)){P.phase='none';return render()}
   P.phase='busy';render();await advance(id)}
 function endLine(note){flushM();P.phase='wait';P.note=note;render()}
 async function attempt(from,to){
@@ -329,14 +328,14 @@ Object.assign(A,{
     P.reveal=n.moves.map(m=>m.san).join(' or ');P.msg='The move is '+P.reveal+'. Play it to continue.';persist();render()},
   pskip(){if(P.phase==='ask')startLine()},
   pignore(){if(P.phase!=='ask'&&P.phase!=='wait')return;const n=cur();
-    if(n.k===START)return toast('Cannot ignore the starting position.');n.pign=true;P.pending.add(n.k);persist();startLine()},
+    if(n.k===S.focus)return toast('Cannot ignore the position you are practising from. Change the focus in Build mode.');n.pign=true;P.pending.add(n.k);persist();startLine()},
   pnext(){if(P.phase==='wait'||P.phase==='none')startLine()},
   pclear(){for(const n of S.nodes.values())n.pign=false;P.pending.clear();buildM();persist();startLine()},
   preset(){if(!confirm('Erase all practice results for this colour?'))return;
     for(const n of S.nodes.values())n.r=null;P.pending.clear();buildM();persist();startLine()}});
 function renderPractice(){
   const ph=P.phase,ni=[...S.nodes.values()].filter(x=>x.pign).length;
-  $('#prac').innerHTML=`<b>Practice · ${S.white?'White':'Black'}</b> <span class="mut">${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}</span>
+  $('#prac').innerHTML=`<b>Practice · ${S.white?'White':'Black'}</b> <span class="mut">${S.focus===START?'from the starting position':'from: '+(sanOf(pathTo(S.focus))||'start')}</span>
    ${ph==='none'?'<p>Nothing to practise yet. Build some lines in Build mode, or check your focus and ignored positions.</p>':''}
    ${ph==='busy'?'<p class="mut">…</p>':''}
    ${ph==='ask'?`<p><b>Your move.</b></p>${P.msg?`<p class="bad">${P.msg}</p>`:''}`:''}
