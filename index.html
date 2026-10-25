@@ -25,7 +25,8 @@ button:hover{border-color:var(--ac)}button.on{background:var(--ac);color:#fff;bo
 table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;color:var(--mut);font-size:12px}
 td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rgba(120,120,120,.15)}
 .mut{color:var(--mut);font-size:13px}
-#moves{max-height:55vh;overflow:auto}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
+#moves{max-height:55vh;overflow:auto}
+aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{display:block}.bad{color:#d9534f}summary{cursor:pointer}label{display:inline-block;margin:2px 8px 2px 0}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
@@ -46,7 +47,7 @@ td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rg
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
 <header><h1>♞ Opening Builder</h1>
-<span class="seg"><button id="colW" data-a="colW">♔ White</button><button id="colB" data-a="colB">♚ Black</button></span>
+<span class="seg"><button id="colW" data-a="colW">♔ White</button><button id="colB" data-a="colB">♚ Black</button></span><span class="seg"><button id="mB" data-a="modeB">Build</button><button id="mP" data-a="modeP">Practice</button></span>
 <button data-a="load">Load…</button><button data-a="save">Save</button><button id="auth" data-a="auth">Log in with Lichess</button>
 <input type="file" id="file" accept=".json" hidden></header>
 <section id="gate"><div class="card"><h2>♞ Opening Builder</h2>
@@ -54,7 +55,7 @@ td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rg
 <p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
 <button data-a="auth" class="on">Log in with Lichess</button></div></section>
 <main><section id="left"><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div></div><div id="pathline"></div></section>
-<aside><div class="card" id="info"></div><div class="card"><div class="btns" id="btns"></div></div>
+<aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
 <div id="toast"></div>
@@ -69,7 +70,7 @@ const $=s=>document.querySelector(s);
 const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch{return null}};
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
-let S=null,busy=false;
+let S=null,busy=false,mode='b';const B={path:[START]},P={phase:'none',id:0,failed:false,msg:'',note:'',stop:false};
 function applyTheme(){const l='#ecdab9',d='#ae8a68';let q='';
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2)q+=`M${c} ${r}h1v1h-1z`;
   const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'><path fill='${d}' d='${q}'/></svg>`;
@@ -79,7 +80,7 @@ function askPromo(color){return new Promise(res=>{const el=$('#promo');
   el.classList.add('show');el.onclick=e=>{const b=e.target.closest('[data-p]');el.classList.remove('show');res(b?b.dataset.p:null)}})}
 
 /* ---------- tree model ---------- */
-function blank(white,undo){S={white,flip:false,limit:-Infinity,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[]};node(START_FEN)}
+function blank(white,undo){S={white,flip:false,limit:-Infinity,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
 function node(fen){const k=key(fen);if(!S.nodes.has(k))S.nodes.set(k,{k,fen,moves:[],prob:-Infinity,ignore:false});return S.nodes.get(k)}
 const cur=()=>S.nodes.get(S.path.at(-1));
 const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
@@ -90,20 +91,22 @@ function buildOpp(n){ // all legal moves of an opponent position, probability (g
   const c=new Chess(n.fen),ls=c.moves({verbose:true}),uc=m=>m.from+m.to+(m.promotion||'');
   n.N=ls.reduce((a,m)=>a+(n.g[uc(m)]||0),0);n.moves=[];
   for(const m of ls){const u=uc(m);c.move({from:m.from,to:m.to,promotion:m.promotion});const f=c.fen();c.undo();
-    n.moves.push({uci:u,san:m.san,to:node(f).k,p:Math.log2(((n.g[u]||0)+1)/(n.N+ls.length))})}
+    const ch=node(f);if(m.san.endsWith('#'))ch.mate=true;
+    n.moves.push({uci:u,san:m.san,to:ch.k,p:Math.log2(((n.g[u]||0)+1)/(n.N+ls.length))})}
   n.moves.sort((a,b)=>b.p-a.p)}
 function addMove(n,uci,p){uci=fixCastle(n,uci);
   const ex=n.moves.find(m=>m.uci===uci);if(ex)return ex;
   const c=new Chess(n.fen),r=c.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]});
   if(!r)throw Error('Illegal move '+uci);
-  const m={uci,san:r.san,to:node(c.fen()).k,p};n.moves.push(m);return m}
+  const ch=node(c.fen());if(r.san.endsWith('#'))ch.mate=true;const m={uci,san:r.san,to:ch.k,p};n.moves.push(m);return m}
 const lse=(a,b)=>a===-Infinity?b:b===-Infinity?a:Math.max(a,b)+Math.log2(1+2**-Math.abs(a-b));
 function recompute(){ // total probability of reaching each position (summed over transpositions); repetition loops are ignored
   const N=S.nodes,order=[],seen=new Set(),st=new Set(),back=new Set();
   (function d(k){seen.add(k);st.add(k);for(const m of N.get(k).moves){if(st.has(m.to))back.add(m);else if(!seen.has(m.to))d(m.to)}st.delete(k);order.push(k)})(START);
   for(const n of N.values()){n.prob=-Infinity;n.bv=-Infinity;n.par=null}
+  S.post=[...order];S.back=back;S.pi=new Map(order.map((k,i)=>[k,i]));S.parents=new Map();
   N.get(START).prob=0;
-  for(const k of order.reverse()){const n=N.get(k);for(const m of n.moves){if(back.has(m))continue;
+  for(const k of order.reverse()){const n=N.get(k);for(const m of n.moves){if(back.has(m))continue;(S.parents.get(m.to)||S.parents.set(m.to,[]).get(m.to)).push(k);
     const t=N.get(m.to),v=n.prob+m.p;t.prob=lse(t.prob,v);if(v>t.bv){t.bv=v;t.par=k}}}}
 function pathTo(k){const p=[k];while(p[0]!==START&&S.nodes.get(p[0]).par)p.unshift(S.nodes.get(p[0]).par);return p}
 function nextLine(){ // best unfinished line inside the focus; returns the full route (through the focus root)
@@ -135,15 +138,19 @@ async function userMove(uci){const n=cur();
 /* ---------- save / load ---------- */
 const ser=()=>{const opp=[],user=[];
   for(const n of S.nodes.values()){if(n.exp)opp.push([n.k,n.g]);else if(userTurn(n)&&n.moves.length)user.push([n.k,n.moves.map(m=>m.uci)])}
-  return{v:3,white:S.white,limit:isFinite(S.limit)?S.limit:null,stay:S.stay,focus:S.focus,path:S.path,opp,user,
-    ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k)}};
-function load(o){if(o.v!==3)throw Error('This tree was saved by an older version and cannot be loaded.');
+  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,stay:S.stay,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
+    ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k),
+    pign:[...S.nodes.values()].filter(n=>n.pign).map(n=>n.k),
+    res:[...S.nodes.values()].filter(n=>n.r&&n.r[0]+n.r[1]>0).map(n=>[n.k,n.r[0],n.r[1]])}};
+function load(o){if(o.v!==3&&o.v!==4)throw Error('This tree was saved by an older version and cannot be loaded.');
   blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;
   const om=new Map(o.opp),um=new Map(o.user),seen=new Set(),q=[START];
   while(q.length){const k=q.shift();if(seen.has(k))continue;seen.add(k);const n=S.nodes.get(k);
     if(om.has(k)){n.g=om.get(k);n.exp=true;buildOpp(n)}else if(um.has(k))um.get(k).forEach(u=>addMove(n,u,0));
     for(const m of n.moves)if(!seen.has(m.to)&&(om.has(m.to)||um.has(m.to)))q.push(m.to)}
-  (o.ignored||[]).forEach(k=>{if(S.nodes.has(k))S.nodes.get(k).ignore=true});recompute();
+  (o.ignored||[]).forEach(k=>{if(S.nodes.has(k))S.nodes.get(k).ignore=true});
+  (o.pign||[]).forEach(k=>{if(S.nodes.has(k))S.nodes.get(k).pign=true});(o.res||[]).forEach(([k,c,w])=>{if(S.nodes.has(k))S.nodes.get(k).r=[c,w]});
+  S.plimit=o.plimit==null?-Infinity:o.plimit;recompute();
   if(o.path?.every(k=>S.nodes.has(k)))S.path=o.path;if(S.nodes.has(o.focus))S.focus=o.focus}
 const slot=w=>w?'tree-white':'tree-black';
 const persist=()=>{ls(slot(S.white),JSON.stringify(ser()));ls('colour',S.white?'w':'b')};
@@ -163,8 +170,8 @@ async function nav(fn){if(busy)return;busy=true;const p0=S.path,f0=S.focus;
   busy=false;recompute();render();persist()}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000)}
 const A={
-  colW:()=>setColour(true),
-  colB:()=>setColour(false),
+  colW:()=>switchColour(true),
+  colB:()=>switchColour(false),
   reset:()=>act(async()=>{if(!confirm('Erase your '+(S.white?'White':'Black')+' tree and start again?'))throw Error('Cancelled');
     blank(S.white,S.undo);await enter([START])}),
   load:()=>$('#file').click(),
@@ -189,7 +196,7 @@ const A={
     if(S.path.length<2)throw Error('Cannot delete the starting position.');
     if(mine&&!n.moves.length)throw Error('There are no moves of yours below this position.');
     if(!confirm(mine?'Delete the moves you chose from this position, and everything below them?':'Delete this position (your move leading here) and everything below it?'))throw Error('Cancelled');
-    if(mine)n.moves=[];else for(const o of S.nodes.values())if(userTurn(o))o.moves=o.moves.filter(m=>m.to!==n.k);
+    if(mine){n.moves=[];n.r=null}else for(const o of S.nodes.values())if(userTurn(o)){const b=o.moves.length;o.moves=o.moves.filter(m=>m.to!==n.k);if(o.moves.length<b)o.r=null}
     const reach=new Set();(function w(k){if(reach.has(k))return;reach.add(k);S.nodes.get(k).moves.forEach(m=>w(m.to))})(START);
     for(const k of [...S.nodes.keys()])if(!reach.has(k))S.nodes.delete(k);
     if(!mine)S.path=S.path.slice(0,-1);while(!S.nodes.has(S.path.at(-1)))S.path.pop();
@@ -198,8 +205,9 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b)
   const r=e.target.closest('[data-mv]');if(r)act(async()=>userMove(r.dataset.mv))});
 document.addEventListener('keydown',e=>{
   if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)||e.ctrlKey||e.metaKey||e.altKey||!S||$('#promo').classList.contains('show')||document.documentElement.classList.contains('out'))return;
+  if(mode==='p'){if(e.key==='Enter'&&e.target.tagName!=='BUTTON'){e.preventDefault();A.pnext()}else if(e.key==='f'||e.key==='F')A.flip();return}
   const k={ArrowLeft:'back',ArrowRight:'fwd',ArrowUp:'root',n:'next',N:'next',f:'flip',F:'flip'}[e.key];if(k){e.preventDefault();A[k]()}});
-$('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';
+$('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';if(mode==='p')leavePractice();
   try{const t=JSON.parse((await f.text()).replace(/-Infinity/g,'null'));
     if(!!t.white!==S.white)await setColour(!!t.white);
     if(S.nodes.size>1&&!confirm('Replace your current '+(S.white?'White':'Black')+' tree with this file?'))return;
@@ -207,6 +215,7 @@ $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.va
   catch(err){toast('Could not load file: '+err.message)}};
 const cg=Chessground($('#board'),{coordinates:false,animation:{duration:200},highlight:{lastMove:true,check:true},
   draggable:{showGhost:true},premovable:{enabled:false},movable:{free:false,showDests:true,events:{after:async(from,to)=>{
+    if(mode==='p')return attempt(from,to);
     const ms=new Chess(cur().fen).moves({verbose:true}).filter(x=>x.from===from&&x.to===to);
     if(busy||!ms.length)return render();
     let pr='';if(ms[0].flags.includes('p')){pr=await askPromo(ms[0].color==='w'?'white':'black');if(!pr)return render()}
@@ -217,17 +226,19 @@ const pct=lp=>{const v=2**lp*100;return(v>=1?v.toFixed(1):v.toFixed(3))+'%'};
 function subtree(k){const seen=new Set(),out=[];(function w(k){if(seen.has(k))return;seen.add(k);const x=S.nodes.get(k);out.push(x);x.moves.forEach(m=>w(m.to))})(k);return out}
 function sanOf(path){let t='';path.slice(1).forEach((k,i)=>{const m=S.nodes.get(path[i]).moves.find(m=>m.to===k);if(m)t+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});return t.trim()}
 function render(){
-  document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');
+  document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');
+  $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
   cg.set({fen:n.fen.split(' ')[0],orientation:bw?'white':'black',turnColor:col,check:c.in_check()?col:false,lastMove:last||null,
-    movable:{color:col,dests}});
+    movable:{color:col,dests:mode==='p'&&P.phase!=='ask'?new Map():dests}});
   const fl=bw?[0,1,2,3,4,5,6,7]:[7,6,5,4,3,2,1,0],rf=bw?7:0,br=bw?1:8; // square is dark when file index + rank is odd
   $('#ranks').innerHTML=(bw?[8,7,6,5,4,3,2,1]:[1,2,3,4,5,6,7,8]).map(r=>`<span class="${(rf+r)%2?'d':'l'}">${r}</span>`).join('');
   $('#files').innerHTML=fl.map(f=>`<span class="${(f+br)%2?'d':'l'}">${'abcdefgh'[f]}</span>`).join('');
   $('#pathline').textContent=sanOf(S.path)||'Starting position';
+  if(mode==='p')return renderPractice();
   const end=c.in_checkmate()?'Checkmate.':c.in_stalemate()?'Stalemate.':c.in_draw()?'Draw.':'';
   $('#info').innerHTML=`<b>${userTurn(n)?'Your move':"Opponent's move"}</b> ${end}<br>
    <span class="mut">${pct(n.prob)} of games reach this position (log₂ ${n.prob.toFixed(2)})</span><br>
@@ -251,6 +262,81 @@ function render(){
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
     cfg.speeds=[...document.querySelectorAll('[data-cs]:checked')].map(x=>x.dataset.cs);
     cfg.ratings=[...document.querySelectorAll('[data-cr]:checked')].map(x=>x.dataset.cr);ls('cfg',JSON.stringify(cfg))})}
+
+/* ---------- practice mode ---------- */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const qOf=n=>n.moves.length?((n.r?.[1]||0)+1)/((n.r?.[0]||0)+(n.r?.[1]||0)+2):1; // chance of getting this position wrong: (wrong+1)/(attempts+2); 1 if you have no move stored
+const wc=(n,m)=>S.back.has(m)||!(S.inF.has(n.k)||S.rel.has(m.to))?0:(S.nodes.get(m.to).W||0);
+function calcW(n){ // W = expected "wrongness" available at or below n (only counting routes that pass through the focus root)
+  if(n.pign||n.mate)return 0;
+  const mine=userTurn(n);let s=0;
+  for(const m of n.moves)s+=(mine?1:2**m.p)*wc(n,m);
+  return mine?(S.inF.has(n.k)?qOf(n):0)+(n.moves.length?s/n.moves.length:0):s}
+function buildW(){
+  S.inF=new Set();(function d(k){if(S.inF.has(k))return;S.inF.add(k);S.nodes.get(k).moves.forEach(m=>d(m.to))})(S.focus);
+  S.rel=new Set([S.focus]);const st=[S.focus];
+  while(st.length){const k=st.pop();for(const p of S.parents.get(k)||[])if(!S.rel.has(p)){S.rel.add(p);st.push(p)}}
+  for(const k of S.post){const n=S.nodes.get(k);n.W=calcW(n)}}
+function updateW(k){ // after a change at k: recompute k and its ancestors, children first
+  const seen=new Set([k]),st=[k];
+  while(st.length){const x=st.pop();for(const p of S.parents.get(x)||[])if(!seen.has(p)){seen.add(p);st.push(p)}}
+  [...seen].sort((a,b)=>S.pi.get(a)-S.pi.get(b)).forEach(x=>{const n=S.nodes.get(x);n.W=calcW(n)})}
+function pick(items){const t=items.reduce((a,x)=>a+x[0],0);if(!(t>0))return null;let r=Math.random()*t;
+  for(const x of items){r-=x[0];if(r<0)return x[1]}return items.at(-1)[1]}
+async function advance(id){ // play the opponent's moves until you must answer, or the line ends
+  for(;;){const n=cur();
+    if(userTurn(n)){
+      if(!n.moves.length){P.stop=true;return endLine('No response stored for this position yet. Build one in Build mode, or ignore the position.')}
+      P.stop=S.inF.has(n.k)&&Math.random()<(n.W>0?qOf(n)/n.W:1);P.phase='ask';return render()}
+    const m=pick(n.moves.map(m=>[2**m.p*wc(n,m),m]));
+    if(!m)return endLine('Line ended.');
+    await sleep(450);if(id!==P.id)return;
+    S.path=[...S.path,m.to];render();
+    if(S.nodes.get(m.to).prob<S.plimit)return endLine('Line ended: this position is below your practice limit.')}}
+async function startLine(){P.id++;const id=P.id;P.failed=false;P.msg='';P.note='';S.path=[START];
+  if(!(S.nodes.get(START).W>0)){P.phase='none';return render()}
+  P.phase='busy';render();await advance(id)}
+function endLine(note){P.phase='wait';P.note=note;render()}
+async function attempt(from,to){
+  if(P.phase!=='ask')return render();
+  const n=cur(),ms=new Chess(n.fen).moves({verbose:true}).filter(x=>x.from===from&&x.to===to);
+  if(!ms.length)return render();
+  let pr='';if(ms[0].flags.includes('p')){pr=await askPromo(ms[0].color==='w'?'white':'black');if(!pr)return render()}
+  const uci=from+to+pr,m=n.moves.find(x=>x.uci===uci),id=P.id;n.r=n.r||[0,0];
+  if(!m){n.r[1]++;P.failed=true;P.msg='Wrong – try again.';updateW(n.k);persist();return render()}
+  if(!P.failed)n.r[0]++; // an answer that follows a failed attempt is not counted as correct
+  P.failed=false;P.msg='';updateW(n.k);persist();
+  S.path=[...S.path,m.to];
+  if(P.stop||!(S.nodes.get(m.to).W>0))return endLine('Correct! End of line.');
+  P.phase='busy';render();await advance(id)}
+function enterPractice(){B.path=S.path;mode='p';buildW();startLine()}
+function leavePractice(){P.id++;mode='b';S.path=B.path;render()}
+async function switchColour(w){const was=mode;if(was==='p'&&S.white===w)return;
+  if(was==='p')leavePractice();await setColour(w);if(was==='p')enterPractice()}
+Object.assign(A,{
+  modeB:()=>{if(mode==='p')leavePractice()},
+  modeP:()=>{if(mode==='b')enterPractice()},
+  reveal(){if(P.phase!=='ask')return;const n=cur();n.r=n.r||[0,0];n.r[1]++;P.failed=true;
+    P.msg='The move is '+n.moves.map(m=>m.san).join(' or ')+'. Play it to continue.';updateW(n.k);persist();render()},
+  pignore(){if(P.phase!=='ask'&&P.phase!=='wait')return;const n=cur();
+    if(n.k===START)return toast('Cannot ignore the starting position.');n.pign=true;updateW(n.k);persist();startLine()},
+  pnext(){if(P.phase==='wait'||P.phase==='none')startLine()},
+  pclear(){for(const n of S.nodes.values())n.pign=false;buildW();persist();startLine()},
+  preset(){if(!confirm('Erase all practice results for this colour?'))return;
+    for(const n of S.nodes.values())n.r=null;buildW();persist();startLine()}});
+function renderPractice(){
+  const n=cur(),ph=P.phase,r=n.r||[0,0],ni=[...S.nodes.values()].filter(x=>x.pign).length;
+  $('#prac').innerHTML=`<b>Practice · ${S.white?'White':'Black'}</b> <span class="mut">${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}</span>
+   ${ph==='none'?'<p>Nothing to practise yet. Build some lines in Build mode, or check your focus and ignored positions.</p>':''}
+   ${ph==='busy'?'<p class="mut">…</p>':''}
+   ${ph==='ask'?`<p><b>Your move.</b></p>${P.msg?`<p class="bad">${P.msg}</p>`:''}<p class="mut">This position: ${r[0]} right, ${r[1]} wrong</p>`:''}
+   ${ph==='wait'?`<p><b>${P.note}</b></p>`:''}
+   <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
+   <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
+   <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.plimit)?S.plimit:''}" placeholder="none"></label>
+   <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
+   <p class="mut">Ignore and the practice limit only affect practice. Prune and the limit in Build mode are separate.</p></div>`;
+  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')S.plimit=-Infinity;else if(+v<0)S.plimit=+v;else toast('Limit must be negative');persist()}}
 
 /* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
 const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
