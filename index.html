@@ -2,11 +2,11 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Opening Builder</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.base.css">
+<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;700&display=swap">
+<link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.base.css">
 <style id="boardcss"></style>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.cburnett.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.cburnett.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js" crossorigin="anonymous"></script>
 <style>
 :root{--bg:#f7f6f5;--fg:#4d4d4d;--card:#fff;--bd:#d9d9d9;--ac:#629924;--mut:#8a8a8a}
 @media(prefers-color-scheme:dark){:root{--bg:#161512;--fg:#bababa;--card:#262421;--bd:#3c3a37;--ac:#629924;--mut:#8a8784}}
@@ -26,7 +26,8 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;col
 td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rgba(120,120,120,.15)}
 .mut{color:var(--mut);font-size:13px}
 #moves{max-height:55vh;overflow:auto}
-aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{display:block}.bad{color:#d9534f;border-radius:6px;padding:4px 8px;animation:flash .7s}
+aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{display:block}.good{color:#629924}
+.bad{color:#d9534f;border-radius:6px;padding:4px 8px;animation:flash .7s}
 @keyframes flash{0%{background:rgba(217,83,79,.4)}100%{background:rgba(217,83,79,0)}}
 .cg-wrap square.last-move{background-color:rgba(155,199,0,.41)}
 .cg-wrap square.selected{background-color:rgba(20,85,30,.5)}
@@ -37,7 +38,12 @@ aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{disp
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
-#boardwrap{position:relative;container-type:inline-size}
+#boardrow{display:flex;gap:6px;align-items:stretch}#boardwrap{position:relative;container-type:inline-size;flex:1;min-width:0}
+#gauge{display:none;width:16px;flex:none;border-radius:4px;overflow:hidden;background:#403d39;flex-direction:column;justify-content:flex-end}
+html.ev #gauge{display:flex}#gauge.rev{justify-content:flex-start}#gw{background:#f0f0f0;height:50%;transition:height .3s}
+.evrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.evscore{font-size:22px;font-weight:700}.evlbl{flex:1}
+button.tick{background:#3692e7;border-color:#3692e7;color:#fff}.pvl{padding:3px 0;font-size:14px}.pvl b{display:inline-block;min-width:3.2em}
+#evlines{margin-top:6px}#evset{margin-top:8px}html.pm #gauge{display:none}
 #promo{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
 #promo.show{display:flex}#promo .pbox{display:flex;gap:4px;padding:6px;background:var(--card);border-radius:8px}
 #promo button{position:relative;width:min(16vw,84px);aspect-ratio:1;padding:0}
@@ -61,8 +67,8 @@ aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{disp
 <p>Build an opening tree around the positions that actually come up most often in Lichess games.</p>
 <p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
 <button data-a="auth" class="on">Log in with Lichess</button></div></section>
-<main><section id="left"><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div></div><div id="pathline"></div></section>
-<aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card"><div class="btns" id="btns"></div></div>
+<main><section id="left"><div id="boardrow"><div id="gauge"><div id="gw"></div></div><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div></div></div><div id="pathline"></div></section>
+<aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card" id="evalbox"><div id="evtop"></div><div id="evlines"></div><details id="evset"><summary>Engine settings</summary><div id="evsetbody"></div></details></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
 <div id="toast"></div>
@@ -77,6 +83,7 @@ const $=s=>document.querySelector(s);
 const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch{return null}};
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
+cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev);
 let S=null,busy=false,mode='b';const B={path:[START]},P={phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:'',pending:new Set()};
 function applyTheme(){const l='#ecdab9',d='#ae8a68';let q='';
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2)q+=`M${c} ${r}h1v1h-1z`;
@@ -87,7 +94,7 @@ function askPromo(color){return new Promise(res=>{const el=$('#promo');
   el.classList.add('show');el.onclick=e=>{const b=e.target.closest('[data-p]');el.classList.remove('show');res(b?b.dataset.p:null)}})}
 
 /* ---------- tree model ---------- */
-function blank(white,undo){S={white,flip:false,limit:-Infinity,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
+function blank(white,undo){S={white,flip:false,limit:-Infinity,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
 function node(fen){const k=key(fen);if(!S.nodes.has(k))S.nodes.set(k,{k,fen,moves:[],prob:-Infinity,ignore:false});return S.nodes.get(k)}
 const cur=()=>S.nodes.get(S.path.at(-1));
 const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
@@ -135,8 +142,7 @@ async function fetchOpp(n){
 async function enter(p){ // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
   S.path=p;const n=cur();
   if(!userTurn(n)&&!over(n)&&!n.exp){await fetchOpp(n);recompute();
-    const m=n.N>0?n.moves[0]:null;if(m&&n.prob+m.p>=S.limit)S.path=[...p,m.to]}
-  if(S.stay)S.focus=S.path.at(-1)}
+    const m=n.N>0||n.moves.length===1?n.moves[0]:null;if(m&&n.prob+m.p>=S.limit)S.path=[...p,m.to]}}
 async function userMove(uci){const n=cur();
   if(!userTurn(n)&&!n.exp)await fetchOpp(n);
   const m=n.moves.find(x=>x.uci===uci)||(userTurn(n)?addMove(n,uci,0):null);
@@ -145,12 +151,12 @@ async function userMove(uci){const n=cur();
 /* ---------- save / load ---------- */
 const ser=()=>{const opp=[],user=[];
   for(const n of S.nodes.values()){if(n.exp)opp.push([n.k,n.g]);else if(userTurn(n)&&n.moves.length)user.push([n.k,n.moves.map(m=>m.uci)])}
-  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,stay:S.stay,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
+  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
     ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k),
     pign:[...S.nodes.values()].filter(n=>n.pign).map(n=>n.k),
     res:[...S.nodes.values()].filter(n=>n.r&&n.r[0]+n.r[1]>0).map(n=>[n.k,n.r[0],n.r[1]])}};
 function load(o){if(o.v!==3&&o.v!==4)throw Error('This tree was saved by an older version and cannot be loaded.');
-  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;
+  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;
   const om=new Map(o.opp),um=new Map(o.user),seen=new Set(),q=[START];
   while(q.length){const k=q.shift();if(seen.has(k))continue;seen.add(k);const n=S.nodes.get(k);
     if(om.has(k)){n.g=om.get(k);n.exp=true;buildOpp(n)}else if(um.has(k))um.get(k).forEach(u=>addMove(n,u,0));
@@ -173,7 +179,7 @@ async function act(fn){if(busy)return;busy=true;const s=JSON.stringify(ser());
   catch(e){load(JSON.parse(s));toast(e.message)}
   busy=false;recompute();render();persist()}
 async function nav(fn){if(busy)return;busy=true;const p0=S.path,f0=S.focus;
-  try{await fn();if(S.stay)S.focus=S.path.at(-1)}catch(e){S.path=p0;S.focus=f0;toast(e.message)}
+  try{await fn()}catch(e){S.path=p0;S.focus=f0;toast(e.message)}
   busy=false;recompute();render();persist()}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000)}
 const A={
@@ -187,7 +193,7 @@ const A={
   next:()=>nav(async()=>{const r=nextLine();if(!r)throw Error('No unfinished lines left (check focus and limit).');await enter(r)}),
   back:()=>nav(async()=>{if(S.path.length>1)S.path=S.path.slice(0,-1)}),
   fwd:()=>nav(async()=>{const n=cur();
-    if(!userTurn(n)&&!over(n)){if(!n.exp)return enter(S.path);if(!n.N)throw Error("No Lichess games here – choose the opponent's move yourself.")}
+    if(!userTurn(n)&&!over(n)){if(!n.exp)return enter(S.path);if(!n.N&&n.moves.length>1)throw Error("No Lichess games here – choose the opponent's move yourself.")}
     let b=null;for(const m of n.moves){const t=S.nodes.get(m.to);if(!t.ignore&&(!b||t.prob>b.t.prob))b={m,t}}
     if(!b)throw Error('No further moves in the tree.');await enter([...S.path,b.m.to])}),
   root:()=>nav(async()=>{const i=S.path.indexOf(S.focus);S.path=i>=0?S.path.slice(0,i+1):pathTo(S.focus)}),
@@ -197,7 +203,6 @@ const A={
   unfocus:()=>act(async()=>{S.focus=START}),
   prune:()=>act(async()=>{const n=cur();if(n.k===START)throw Error('Cannot prune the starting position.');
     n.ignore=!n.ignore;if(n.ignore){S.path=S.path.slice(0,-1);if(S.focus===n.k)S.focus=S.path.at(-1)}}),
-  stay:()=>act(async()=>{S.stay=!S.stay}),
   flip(){S.flip=!S.flip;render()},
   del:()=>act(async()=>{const n=cur(),mine=userTurn(n);
     if(S.path.length<2)throw Error('Cannot delete the starting position.');
@@ -236,6 +241,7 @@ function render(){
   document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
+  evalSync(n.fen,bw);drawEvalSettings();
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
@@ -252,14 +258,14 @@ function render(){
    <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
   $('#btns').innerHTML=[['next','Next line (n)'],['back','◀ Back'],['fwd','Forward ▶'],['root','Focus root ▲'],['undo','Undo'],
     ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
-    ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Stay with line'+(S.stay?' ✓':'')]]
-    .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&S.stay?' class="on"':''}>${t}</button>`).join('')+
+    ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete']]
+    .map(([a,t])=>`<button data-a="${a}">${t}</button>`).join('')+
     `<label class="mut" style="margin-top:6px">Limit (log₂, e.g. −5 ≈ 1 in 32 games)
      <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`;
   $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
   const rows=n.moves.map(m=>{const t=S.nodes.get(m.to),w=userTurn(n)?0:Math.round(2**m.p*100);
     return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td style="background:linear-gradient(90deg,rgba(98,153,36,.5) ${w}%,transparent ${w}%)">${userTurn(n)?'—':pct(m.p)}</td><td>${pct(t.prob)}</td></tr>`}).join('');
-  $('#moves').innerHTML=(!userTurn(n)&&n.exp&&!n.N?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
+  $('#moves').innerHTML=(!userTurn(n)&&n.exp&&!n.N&&n.moves.length>1?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
     +(rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
     :`<span class="mut">${userTurn(n)?'No moves yet — play one on the board.':'No moves available.'}</span>`);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
@@ -269,6 +275,104 @@ function render(){
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
     cfg.speeds=[...document.querySelectorAll('[data-cs]:checked')].map(x=>x.dataset.cs);
     cfg.ratings=[...document.querySelectorAll('[data-cr]:checked')].map(x=>x.dataset.cr);ls('cfg',JSON.stringify(cfg))})}
+
+/* ---------- engine: Lichess cloud evaluation + local Stockfish (Build mode only) ---------- */
+const ENGINES={ // key: [label, file, multi-threaded]
+  lite1:['Stockfish 19 lite · 1.7MB','engine/stockfish-19-lite-single.js',false],
+  lite:['Stockfish 19 lite · multi-threaded','engine/stockfish-19-lite.js',true],
+  full1:['Stockfish 19 · 94MB','engine/stockfish-19-single.js',false],
+  full:['Stockfish 19 · 94MB · multi-threaded','engine/stockfish-19.js',true]};
+const AUTO_DEPTH=18,HASHES=[16,32,64,128,256,512];
+const HC=navigator.hardwareConcurrency||2,THR_MAX=Math.max(1,Math.min(HC,8)),THR_REC=Math.max(1,Math.min(THR_MAX,Math.round(HC/3)));
+const EV={fen:null,cur:0,sid:0,cursid:0,cloud:null,local:null,engine:null,optKey:'',status:'',loading:false,progress:null,timer:0,draw:0,bw:true};
+const CFIX={e1h1:'e1g1',e1a1:'e1c1',e8h8:'e8g8',e8a8:'e8c8'};
+function pvSan(fen,moves){ // UCI line -> numbered SAN (first 10 plies)
+  const c=new Chess(fen),f=fen.split(' ');let num=+f[5]||1,white=f[1]==='w';const out=[];
+  for(let u of moves.split(' ').slice(0,10)){
+    if(CFIX[u]&&c.get(u.slice(0,2))?.type==='k')u=CFIX[u]; // cloud evals write castling as king-takes-rook
+    const m=c.move({from:u.slice(0,2),to:u.slice(2,4),promotion:u[4]});if(!m)break;
+    out.push((white?num+'. ':out.length?'':num+'… ')+m.san);if(!white)num++;white=!white}
+  return out.join(' ')}
+const scoreText=p=>p.kind==='mate'?'#'+p.val:(p.val>0?'+':p.val<0?'−':'')+(Math.abs(p.val)/100).toFixed(1);
+async function cloudEval(fen){ // null when Lichess has no evaluation (404), or on any error such as a rate limit
+  try{const r=await fetch('https://lichess.org/api/cloud-eval?fen='+encodeURIComponent(fen)+'&multiPv='+cfg.ev.lines);
+    if(!r.ok)return null;const d=await r.json();if(!d.pvs?.length)return null;
+    return{depth:d.depth,pvs:d.pvs.map(p=>({kind:'cp' in p?'cp':'mate',val:'cp' in p?p.cp:p.mate,moves:p.moves}))}}catch{return null}}
+function engineKill(){const E=EV.engine;if(E){clearTimeout(E.wd);E.w.terminate()}EV.engine=null;EV.cursid=0;EV.optKey=''}
+function engineStop(){const E=EV.engine;EV.cursid=0;if(E&&E.sq.length)E.w.postMessage('stop')}
+function ensureEngine(){
+  const e=cfg.ev,[,file,multi]=ENGINES[e.engine],threads=e.threads||THR_REC,optKey=e.engine+'|'+(multi?threads:0)+'|'+e.hash;
+  if(EV.engine&&EV.optKey===optKey)return EV.engine;
+  engineKill();
+  let w;try{w=new Worker(file)}catch(err){EV.status='Could not start the engine: '+err.message;return null}
+  const E={w,sq:[]};EV.engine=E;EV.optKey=optKey;EV.progress=null;
+  try{const ch=new MessageChannel(); // download progress (the 94MB engine takes a while the first time)
+    ch.port1.onmessage=ev=>{EV.progress=ev.data.percent;if(ev.data.percent===1){EV.progress=null;ch.port1.close()}scheduleDraw()};
+    w.postMessage('setoption name CanOutputEngineDownloadProgress');
+    w.addEventListener('message',ev=>{if(ev.data==='info WillOutputEngineDownloadProgress'){ev.stopImmediatePropagation();w.postMessage({progressPort:ch.port2},[ch.port2])}},{once:true})}catch{}
+  w.onmessage=ev=>onEngineLine(E,String(ev.data));
+  w.onerror=()=>{if(EV.engine!==E)return;EV.status='Could not load '+file+'. Upload the engine files to the engine/ folder.';EV.local=null;engineKill();drawEval()};
+  w.postMessage('uci');if(multi)w.postMessage('setoption name Threads value '+threads);
+  w.postMessage('setoption name Hash value '+e.hash);
+  return E}
+function onEngineLine(E,line){
+  if(E!==EV.engine)return;
+  if(line.startsWith('bestmove')){const s=E.sq.shift();if(s===EV.cursid&&EV.local){EV.local.done=true;EV.local.running=false;scheduleDraw()}return}
+  if(!line.startsWith('info')||line.startsWith('info string')||E.sq[0]!==EV.cursid||!EV.local)return;
+  const m=/ depth (\d+).* multipv (\d+) score (cp|mate) (-?\d+).* pv (.+)$/.exec(line);if(!m)return;
+  const sign=EV.fen.split(' ')[1]==='w'?1:-1; // engine scores are from the side to move; show White's point of view
+  EV.local.pvs[+m[2]-1]={depth:+m[1],kind:m[3],val:sign*(+m[4]),moves:m[5]};EV.local.depth=+m[1];scheduleDraw()}
+function localSearch(limit){ // limit = depth, or 0 for unlimited
+  const E=ensureEngine();if(!E||!EV.fen){drawEval();return}
+  EV.local={pvs:[],depth:0,done:false,running:true,unlimited:!limit};
+  if(E.sq.length)E.w.postMessage('stop');
+  const sid=++EV.sid;EV.cursid=sid;E.sq.push(sid);
+  E.w.postMessage('setoption name MultiPV value '+cfg.ev.lines);E.w.postMessage('position fen '+EV.fen);
+  E.w.postMessage(limit?'go depth '+limit:'go infinite');
+  clearTimeout(E.wd);if(E.sq.length>1)E.wd=setTimeout(()=>{ // the old search ignored "stop": restart the engine
+    if(EV.engine===E&&E.sq.length&&E.sq[0]!==EV.cursid){engineKill();localSearch(limit)}},2500);
+  drawEval()}
+async function runEval(fen,id){
+  EV.loading=true;drawEval();const c=await cloudEval(fen);if(id!==EV.cur)return;
+  EV.loading=false;if(c){EV.cloud=c;drawEval()}else localSearch(AUTO_DEPTH)}
+function evalSync(fen,bw){
+  EV.bw=bw;const want=cfg.ev.on&&mode==='b';document.documentElement.classList.toggle('ev',want);
+  if(!want){if(EV.fen!==null){EV.fen=null;EV.cur++;clearTimeout(EV.timer);EV.cloud=EV.local=null;EV.loading=false;engineStop()}}
+  else if(fen!==EV.fen){
+    EV.fen=fen;const id=++EV.cur;EV.cloud=null;EV.local=null;EV.status='';EV.loading=false;engineStop();clearTimeout(EV.timer);
+    if(new Chess(fen).game_over())EV.status='Game over.';else EV.timer=setTimeout(()=>runEval(fen,id),300)}
+  drawEval()}
+function scheduleDraw(){if(!EV.draw)EV.draw=setTimeout(()=>{EV.draw=0;drawEval()},120)}
+function drawEval(){
+  const top=$('#evtop'),lines=$('#evlines'),gw=$('#gw');if(!top)return;
+  const on=cfg.ev.on&&mode==='b',L=EV.local&&EV.local.pvs.some(Boolean)?EV.local:null,C=EV.cloud;
+  const useLocal=L&&(!C||L.depth>=C.depth),src=useLocal?L:C,pvs=src?(useLocal?L.pvs.filter(Boolean):C.pvs):[];
+  const best=pvs[0],lbl=!src?'':useLocal?ENGINES[cfg.ev.engine][0].replace('Stockfish 19','SF 19')+' · depth '+L.depth+(L.running?' …':''):'Lichess cloud · depth '+C.depth;
+  const run=EV.local&&EV.local.running,tick=EV.loading?'<span class="mut">…</span>':run&&EV.local.unlimited?'<button data-a="evrun" title="Pause the local engine">⏸</button>'
+    :run?'':(C||EV.local)?'<button data-a="evrun" class="tick" title="Run the local engine without a depth limit">✔</button>':'';
+  top.innerHTML=`<div class="evrow"><button data-a="evtoggle" class="${cfg.ev.on?'on':''}">Engine ${cfg.ev.on?'on':'off'}</button>${on?`<span class="evscore">${best?scoreText(best):'…'}</span><span class="mut evlbl">${lbl}</span>${tick}`:''}</div>`;
+  const fen=EV.fen;
+  lines.innerHTML=on?pvs.map(p=>{if(p.sanFor!==p.moves){p.san=fen?pvSan(fen,p.moves):'';p.sanFor=p.moves}
+      return`<div class="pvl"><b>${scoreText(p)}</b> ${p.san}</div>`}).join('')
+    +(EV.progress!=null?`<div class="mut">Downloading the engine… ${Math.round(EV.progress*100)}%</div>`:'')+(EV.status?`<div class="mut">${EV.status}</div>`:''):'';
+  let fill=50;if(on&&best)fill=best.kind==='mate'?(best.val>0?100:0):50+50*(2/(1+Math.exp(-0.00368208*best.val))-1);
+  gw.style.height=fill+'%';$('#gauge').classList.toggle('rev',!EV.bw)}
+function saveEv(){ls('cfg',JSON.stringify(cfg));EV.fen=null;render()}
+function drawEvalSettings(){
+  const el=$('#evsetbody');if(!el)return;const iso=self.crossOriginIsolated,e=cfg.ev,multi=ENGINES[e.engine][2],hi=HASHES.indexOf(e.hash),thr=e.threads||THR_REC;
+  el.innerHTML=`<p><label>Engine <select id="evEng">${Object.entries(ENGINES).map(([k,[l,,m]])=>`<option value="${k}"${k===e.engine?' selected':''}${m&&!iso?' disabled':''}>${l}</option>`).join('')}</select></label></p>
+   ${iso?'':'<p class="mut">Multi-threaded engines need a cross-origin-isolated page (see vercel.json).</p>'}
+   <p><label>Multiple lines <input id="evLines" type="range" min="1" max="5" value="${e.lines}"> <span id="evLinesV">${e.lines}</span></label></p>
+   ${multi?`<p><label>Threads <input id="evThr" type="range" min="1" max="${THR_MAX}" value="${thr}"> <span id="evThrV">${thr}</span></label> <span class="mut">recommended ${THR_REC}, max ${THR_MAX}</span></p>`:''}
+   <p><label>Memory <input id="evHash" type="range" min="0" max="${HASHES.length-1}" value="${hi<0?3:hi}"> <span id="evHashV">${e.hash}</span> MB</label></p>
+   <p class="mut">The engine files live in the <code>engine/</code> folder of the repo.</p>`;
+  $('#evEng').onchange=x=>{cfg.ev.engine=x.target.value;saveEv()};
+  $('#evLines').oninput=x=>{$('#evLinesV').textContent=x.target.value};$('#evLines').onchange=x=>{cfg.ev.lines=+x.target.value;saveEv()};
+  if(multi){$('#evThr').oninput=x=>{$('#evThrV').textContent=x.target.value};$('#evThr').onchange=x=>{cfg.ev.threads=+x.target.value;saveEv()}}
+  $('#evHash').oninput=x=>{$('#evHashV').textContent=HASHES[x.target.value]};$('#evHash').onchange=x=>{cfg.ev.hash=HASHES[x.target.value];saveEv()}}
+Object.assign(A,{
+  evtoggle(){cfg.ev.on=!cfg.ev.on;ls('cfg',JSON.stringify(cfg));EV.fen=null;render()},
+  evrun(){if(EV.local?.running&&EV.local.unlimited){engineStop();EV.local.running=false;drawEval()}else localSearch(0)}});
 
 /* ---------- practice mode ---------- */
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -291,17 +395,17 @@ function pick(items){const t=items.reduce((a,x)=>a+x[0],0);if(!(t>0))return null
   for(const x of items){r-=x[0];if(r<0)return x[1]}return items.at(-1)[1]}
 async function advance(id){ // play the opponent's moves until you must answer, or the line ends (always after an opponent move)
   for(;;){const n=cur();
-    if(n.mate)return endLine('Checkmate.');
+    if(n.mate)return endLine('Well done – you’ve reached the end of the line: it finishes in checkmate!');
     if(userTurn(n)){
-      if(!n.moves.length)return endLine('No response recorded for this position. Build one in Build mode, or ignore the position.');
-      if(n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Line ended: all continuations are ignored.'); // nothing left to practise from here
+      if(!n.moves.length)return endLine('Well done – you’ve reached the end of your prepared line! You have no response recorded for this position yet: build one in Build mode, or ignore the position.');
+      if(n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Well done – you’ve reached the end of the line! Everything beyond this point is ignored.'); // nothing left to practise from here
       P.phase='ask';P.wrongs=0;P.reveal='';P.failed=false;P.msg='';return render()}
     const m=pick(n.moves.map(m=>[2**m.p*wc(n,m),m])) // normal case: follow the weights
       ||pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])); // you left the planned line: play on naturally
-    if(!m)return endLine(n.moves.length?'Line ended: all continuations are ignored.':'No opponent data stored for this position.');
+    if(!m)return endLine(n.moves.length?'Well done – you’ve reached the end of the line! Everything beyond this point is ignored.':'Well done – you’ve reached the end of the line! There’s no opponent data stored beyond this position.');
     await sleep(450);if(id!==P.id)return;
     S.path=[...S.path,m.to];render();
-    if(S.nodes.get(m.to).prob<S.plimit)return endLine('Limit reached: this position is below your practice limit.')}}
+    if(S.nodes.get(m.to).prob<S.plimit)return endLine('Well done – you’ve reached the end of the line! The next positions are below your practice limit.')}}
 async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';S.path=pathTo(S.focus);
   if(!(S.nodes.get(S.focus).M>0)){P.phase='none';return render()}
   P.phase='busy';render();await advance(id)}
@@ -339,7 +443,7 @@ function renderPractice(){
    ${ph==='none'?'<p>Nothing to practise yet. Build some lines in Build mode, or check your focus and ignored positions.</p>':''}
    ${ph==='busy'?'<p class="mut">…</p>':''}
    ${ph==='ask'?`<p><b>Your move.</b></p>${P.msg?`<p class="bad">${P.msg}</p>`:''}`:''}
-   ${ph==='wait'?`<p><b>${P.note}</b></p>`:''}
+   ${ph==='wait'?`<p class="good"><b>${P.note}</b></p>`:''}
    <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
    <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.plimit)?S.plimit:''}" placeholder="none"></label>
@@ -373,6 +477,7 @@ async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(c
 /* ---------- start ---------- */
 let w0=ls('colour')!=='b';
 try{const t=ls(slot(w0));if(t)load(JSON.parse(t));else blank(w0)}catch{blank(w0)}
+if(ENGINES[cfg.ev.engine][2]&&!self.crossOriginIsolated)cfg.ev.engine='lite1';
 applyTheme();finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
