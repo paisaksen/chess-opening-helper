@@ -41,9 +41,19 @@ aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{disp
 #boardrow{display:flex;gap:6px;align-items:stretch}#boardwrap{position:relative;container-type:inline-size;flex:1;min-width:0}
 #gauge{display:none;width:16px;flex:none;border-radius:4px;overflow:hidden;background:#403d39;flex-direction:column;justify-content:flex-end}
 html.ev #gauge{display:flex}#gauge.rev{justify-content:flex-start}#gw{background:#f0f0f0;height:50%;transition:height .3s}
-.evrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.evscore{font-size:22px;font-weight:700}.evlbl{flex:1}
-button.tick{background:#3692e7;border-color:#3692e7;color:#fff}.pvl{padding:3px 0;font-size:14px}.pvl b{display:inline-block;min-width:3.2em}
-#evlines{margin-top:6px}#evset{margin-top:8px}html.pm #gauge{display:none}
+#evbar{height:3px;margin:-12px -12px 9px;border-radius:8px 8px 0 0;overflow:hidden}#evbar span{display:block;height:100%;width:0;background:#629924;transition:width .3s}
+.ceval{display:flex;align-items:center;gap:12px}.pearl{font-size:24px;font-weight:700;min-width:3.1em;text-align:center}
+.engine{flex:1;line-height:1.4;font-size:13px;color:var(--mut)}.tech{color:#629924;font-weight:700}
+.cloudtag{background:#629924;color:#fff;border-radius:4px;padding:0 5px;font-size:11px;font-weight:700}
+button.deeper{display:inline-flex;vertical-align:middle;margin-right:5px;padding:0;border:0;background:none}
+button.gear{border:0;background:none;font-size:22px;line-height:1;padding:5px 8px;border-radius:5px;color:var(--mut)}button.gear.on{background:#3692e7;color:#fff}
+button.sw{position:relative;flex:none;width:54px;height:30px;padding:0;border:0;border-radius:15px;background:#5d5b58}
+button.sw::after{content:'✕';position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#2b2926;color:#999;font-size:13px;line-height:24px;text-align:center;transition:left .2s}
+button.sw.on{background:#629924}button.sw.on::after{content:'✓';left:27px;color:#629924}
+#evsetbody{margin-top:10px;padding-top:8px;border-top:1px solid var(--bd)}
+.pvl{display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--bd);cursor:pointer;font-size:14px}.pvl b{flex:none;min-width:3.2em}
+.pvl .mv{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.pvl.wrap .mv{white-space:normal}
+.pvl::after{content:'▼';font-size:10px;color:var(--mut);align-self:center}.pvl.wrap::after{content:'▲'}#evlines{margin-top:8px}html.pm #gauge{display:none}
 #promo{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
 #promo.show{display:flex}#promo .pbox{display:flex;gap:4px;padding:6px;background:var(--card);border-radius:8px}
 #promo button{position:relative;width:min(16vw,84px);aspect-ratio:1;padding:0}
@@ -68,7 +78,7 @@ button.tick{background:#3692e7;border-color:#3692e7;color:#fff}.pvl{padding:3px 
 <p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
 <button data-a="auth" class="on">Log in with Lichess</button></div></section>
 <main><section id="left"><div id="boardrow"><div id="gauge"><div id="gw"></div></div><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div></div></div><div id="pathline"></div></section>
-<aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card" id="evalbox"><div id="evtop"></div><div id="evlines"></div><details id="evset"><summary>Engine settings</summary><div id="evsetbody"></div></details></div><div class="card"><div class="btns" id="btns"></div></div>
+<aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card" id="evalbox"><div id="evbar"><span></span></div><div id="evtop"></div><div id="evsetbody" hidden></div><div id="evlines"></div></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
 <div id="toast"></div>
@@ -290,14 +300,14 @@ const ENGINES={ // key: [label, file, multi-threaded]
   full:['Stockfish 19 · 94MB · multi-threaded','engine/stockfish-19.js',true]};
 const AUTO_DEPTH=18,HASHES=[16,32,64,128,256,512];
 const HC=navigator.hardwareConcurrency||2,THR_MAX=Math.max(1,Math.min(HC,8)),THR_REC=Math.max(1,Math.min(THR_MAX,Math.round(HC/3)));
-const EV={fen:null,cur:0,sid:0,cursid:0,cloud:null,local:null,engine:null,optKey:'',status:'',loading:false,progress:null,timer:0,draw:0,bw:true};
+const EV={fen:null,cur:0,sid:0,cursid:0,cloud:null,local:null,engine:null,optKey:'',status:'',loading:false,progress:null,timer:0,draw:0,bw:true,showSet:false,wrap:new Set()};
 const CFIX={e1h1:'e1g1',e1a1:'e1c1',e8h8:'e8g8',e8a8:'e8c8'};
 function pvSan(fen,moves){ // UCI line -> numbered SAN (first 10 plies)
   const c=new Chess(fen),f=fen.split(' ');let num=+f[5]||1,white=f[1]==='w';const out=[];
   for(let u of moves.split(' ').slice(0,10)){
     if(CFIX[u]&&c.get(u.slice(0,2))?.type==='k')u=CFIX[u]; // cloud evals write castling as king-takes-rook
     const m=c.move({from:u.slice(0,2),to:u.slice(2,4),promotion:u[4]});if(!m)break;
-    out.push((white?num+'. ':out.length?'':num+'… ')+m.san);if(!white)num++;white=!white}
+    out.push((white?num+'. ':out.length?'':num+'… ')+m.san.replace(/^[KQRBN]/,c=>FIG[c]));if(!white)num++;white=!white}
   return out.join(' ')}
 const scoreText=p=>p.kind==='mate'?'#'+p.val:(p.val>0?'+':p.val<0?'−':'')+(Math.abs(p.val)/100).toFixed(1);
 async function cloudEval(fen){ // null when Lichess has no evaluation (404), or on any error such as a rate limit
@@ -349,20 +359,28 @@ function evalSync(fen,bw){
     if(new Chess(fen).game_over())EV.status='Game over.';else EV.timer=setTimeout(()=>runEval(fen,id),300)}
   drawEval()}
 function scheduleDraw(){if(!EV.draw)EV.draw=setTimeout(()=>{EV.draw=0;drawEval()},120)}
+const FIG={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘'},SHORT={lite1:'SF 19 lite',lite:'SF 19 lite',full1:'SF 19 94MB',full:'SF 19 94MB'};
+const PLUS='<svg viewBox="0 0 24 24" width="18" height="18"><rect width="24" height="24" rx="4" fill="#3692e7"/><path d="M12 6v12M6 12h12" stroke="#fff" stroke-width="3"/></svg>';
 function drawEval(){
   const top=$('#evtop'),lines=$('#evlines'),gw=$('#gw');if(!top)return;
   const on=cfg.ev.on&&mode==='b',L=EV.local&&EV.local.pvs.some(Boolean)?EV.local:null,C=EV.cloud;
   const useLocal=L&&(!C||L.depth>=C.depth),src=useLocal?L:C,pvs=src?(useLocal?L.pvs.filter(Boolean):C.pvs):[];
-  const best=pvs[0],lbl=!src?'':useLocal?ENGINES[cfg.ev.engine][0].replace('Stockfish 19','SF 19')+' · depth '+L.depth+(L.running?' …':''):'Lichess cloud · depth '+C.depth;
-  const run=EV.local&&EV.local.running,tick=EV.loading?'<span class="mut">…</span>':run&&EV.local.unlimited?'<button data-a="evrun" title="Pause the local engine">⏸</button>'
-    :run?'':(C||EV.local)?'<button data-a="evrun" class="tick" title="Run the local engine without a depth limit">✔</button>':'';
-  top.innerHTML=`<div class="evrow"><button data-a="evtoggle" class="${cfg.ev.on?'on':''}">Engine ${cfg.ev.on?'on':'off'}</button>${on?`<span class="evscore">${best?scoreText(best):'…'}</span><span class="mut evlbl">${lbl}</span>${tick}`:''}</div>`;
+  const best=pvs[0],depth=src?(useLocal?L.depth:C.depth):0,run=EV.local&&EV.local.running;
+  const plus=!on||EV.loading||run?'':(C||EV.local)?`<button class="deeper" data-a="evrun" title="Go deeper (no depth limit)">${PLUS}</button>`:'';
+  top.innerHTML=`<div class="ceval"><button class="sw${cfg.ev.on?' on':''}" data-a="evtoggle" role="switch" aria-checked="${cfg.ev.on}" title="Engine on/off"></button>
+    <span class="pearl">${on?(best?scoreText(best):'…'):'—'}</span>
+    <div class="engine"><div>${SHORT[cfg.ev.engine]} <span class="tech">NNUE</span></div>
+    <div class="info">${on?`${plus}${src?'Depth '+depth:EV.loading?'checking the cloud…':''}${src&&!useLocal?' <span class="cloudtag">CLOUD</span>':''}${run?' …':''}`:'in local browser'}</div></div>
+    <button class="gear${EV.showSet?' on':''}" data-a="evgear" title="Engine settings">⚙︎</button></div>`;
+  $('#evsetbody').hidden=!EV.showSet;
+  $('#evbar span').style.width=(on&&src?(run&&!EV.local.unlimited?Math.min(100,100*L.depth/AUTO_DEPTH):100):0)+'%';
   const fen=EV.fen;
-  lines.innerHTML=on?pvs.map(p=>{if(p.sanFor!==p.moves){p.san=fen?pvSan(fen,p.moves):'';p.sanFor=p.moves}
-      return`<div class="pvl"><b>${scoreText(p)}</b> ${p.san}</div>`}).join('')
+  lines.innerHTML=on?pvs.map((p,i)=>{if(p.sanFor!==p.moves){p.san=fen?pvSan(fen,p.moves):'';p.sanFor=p.moves}
+      return`<div class="pvl${EV.wrap.has(i)?' wrap':''}" data-pv="${i}"><b>${scoreText(p)}</b><span class="mv">${p.san}</span></div>`}).join('')
     +(EV.progress!=null?`<div class="mut">Downloading the engine… ${Math.round(EV.progress*100)}%</div>`:'')+(EV.status?`<div class="mut">${EV.status}</div>`:''):'';
   let fill=50;if(on&&best)fill=best.kind==='mate'?(best.val>0?100:0):50+50*(2/(1+Math.exp(-0.00368208*best.val))-1);
   gw.style.height=fill+'%';$('#gauge').classList.toggle('rev',!EV.bw)}
+document.addEventListener('click',e=>{const r=e.target.closest('[data-pv]');if(!r)return;const i=+r.dataset.pv;EV.wrap.has(i)?EV.wrap.delete(i):EV.wrap.add(i);drawEval()});
 function saveEv(){ls('cfg',JSON.stringify(cfg));EV.fen=null;render()}
 function drawEvalSettings(){
   const el=$('#evsetbody');if(!el)return;const iso=self.crossOriginIsolated,e=cfg.ev,multi=ENGINES[e.engine][2],hi=HASHES.indexOf(e.hash),thr=e.threads||THR_REC;
@@ -378,7 +396,8 @@ function drawEvalSettings(){
   $('#evHash').oninput=x=>{$('#evHashV').textContent=HASHES[x.target.value]};$('#evHash').onchange=x=>{cfg.ev.hash=HASHES[x.target.value];saveEv()}}
 Object.assign(A,{
   evtoggle(){cfg.ev.on=!cfg.ev.on;ls('cfg',JSON.stringify(cfg));EV.fen=null;render()},
-  evrun(){if(EV.local?.running&&EV.local.unlimited){engineStop();EV.local.running=false;drawEval()}else localSearch(0)}});
+  evgear(){EV.showSet=!EV.showSet;drawEval()},
+  evrun(){if(!EV.local?.running)localSearch(0)}});
 
 /* ---------- practice mode ---------- */
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
