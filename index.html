@@ -94,7 +94,7 @@ function askPromo(color){return new Promise(res=>{const el=$('#promo');
   el.classList.add('show');el.onclick=e=>{const b=e.target.closest('[data-p]');el.classList.remove('show');res(b?b.dataset.p:null)}})}
 
 /* ---------- tree model ---------- */
-function blank(white,undo){S={white,flip:false,limit:-Infinity,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
+function blank(white,undo){S={white,flip:false,limit:-Infinity,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
 function node(fen){const k=key(fen);if(!S.nodes.has(k))S.nodes.set(k,{k,fen,moves:[],prob:-Infinity,ignore:false});return S.nodes.get(k)}
 const cur=()=>S.nodes.get(S.path.at(-1));
 const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
@@ -123,13 +123,18 @@ function recompute(){ // total probability of reaching each position (summed ove
   for(const k of order.reverse()){const n=N.get(k);for(const m of n.moves){if(back.has(m))continue;(S.parents.get(m.to)||S.parents.set(m.to,[]).get(m.to)).push(k);
     const t=N.get(m.to),v=n.prob+m.p;t.prob=lse(t.prob,v);if(v>t.bv){t.bv=v;t.par=k}}}}
 function pathTo(k){const p=[k];while(p[0]!==START&&S.nodes.get(p[0]).par)p.unshift(S.nodes.get(p[0]).par);return p}
-function nextLine(){ // best unfinished line inside the focus; returns the full route (through the focus root)
+function bestUnder(root){ // best unfinished line below root (skipping pruned positions and positions below the limit); returns the route from root
   let best=null;const from=new Map(),seen=new Set();
   (function w(k){if(seen.has(k))return;seen.add(k);const n=S.nodes.get(k);if(n.ignore)return;
     if(!n.moves.length){if(n.prob>=S.limit&&(!best||n.prob>best.prob)&&!over(n))best=n;return}
-    for(const m of n.moves){if(m.to!==S.focus&&!from.has(m.to))from.set(m.to,k);w(m.to)}})(S.focus);
-  if(!best)return null;
-  const rt=[best.k];while(rt[0]!==S.focus)rt.unshift(from.get(rt[0]));
+    for(const m of n.moves){if(m.to!==root&&!from.has(m.to))from.set(m.to,k);w(m.to)}})(root);
+  if(!best)return null;const rt=[best.k];while(rt[0]!==root)rt.unshift(from.get(rt[0]));return rt}
+function nextLine(){ // returns the full route to the next unfinished line inside the focus
+  if(S.stay){ // depth-first: finish what is below the current position, then back up along the current path
+    const sub=new Set(subtree(S.focus).map(x=>x.k));
+    for(let i=S.path.length-1;i>=0;i--){if(!sub.has(S.path[i]))continue;
+      const rt=bestUnder(S.path[i]);if(rt)return[...S.path.slice(0,i+1),...rt.slice(1)]}}
+  const rt=bestUnder(S.focus);if(!rt)return null;
   const i=S.path.indexOf(S.focus);return[...(i>=0?S.path.slice(0,i+1):pathTo(S.focus)),...rt.slice(1)]}
 async function fetchOpp(n){
   const u=`https://explorer.lichess.ovh/lichess?speeds=${cfg.speeds}&ratings=${cfg.ratings}&moves=99&fen=${encodeURIComponent(n.fen)}`;
@@ -151,12 +156,12 @@ async function userMove(uci){const n=cur();
 /* ---------- save / load ---------- */
 const ser=()=>{const opp=[],user=[];
   for(const n of S.nodes.values()){if(n.exp)opp.push([n.k,n.g]);else if(userTurn(n)&&n.moves.length)user.push([n.k,n.moves.map(m=>m.uci)])}
-  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
+  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,stay:S.stay,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
     ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k),
     pign:[...S.nodes.values()].filter(n=>n.pign).map(n=>n.k),
     res:[...S.nodes.values()].filter(n=>n.r&&n.r[0]+n.r[1]>0).map(n=>[n.k,n.r[0],n.r[1]])}};
 function load(o){if(o.v!==3&&o.v!==4)throw Error('This tree was saved by an older version and cannot be loaded.');
-  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;
+  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;
   const om=new Map(o.opp),um=new Map(o.user),seen=new Set(),q=[START];
   while(q.length){const k=q.shift();if(seen.has(k))continue;seen.add(k);const n=S.nodes.get(k);
     if(om.has(k)){n.g=om.get(k);n.exp=true;buildOpp(n)}else if(um.has(k))um.get(k).forEach(u=>addMove(n,u,0));
@@ -199,6 +204,7 @@ const A={
   root:()=>nav(async()=>{const i=S.path.indexOf(S.focus);S.path=i>=0?S.path.slice(0,i+1):pathTo(S.focus)}),
   undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
   reviveall:()=>act(async()=>{subtree(cur().k).forEach(x=>x.ignore=false)}),
+  stay:()=>act(async()=>{S.stay=!S.stay}),
   focus:()=>act(async()=>{S.focus=cur().k}),
   unfocus:()=>act(async()=>{S.focus=START}),
   prune:()=>act(async()=>{const n=cur();if(n.k===START)throw Error('Cannot prune the starting position.');
@@ -258,8 +264,8 @@ function render(){
    <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
   $('#btns').innerHTML=[['next','Next line (n)'],['back','◀ Back'],['fwd','Forward ▶'],['root','Focus root ▲'],['undo','Undo'],
     ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
-    ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete']]
-    .map(([a,t])=>`<button data-a="${a}">${t}</button>`).join('')+
+    ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Depth-first'+(S.stay?' ✓':'')]]
+    .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&S.stay?' class="on"':''}>${t}</button>`).join('')+
     `<label class="mut" style="margin-top:6px">Limit (log₂, e.g. −5 ≈ 1 in 32 games)
      <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`;
   $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
