@@ -8,22 +8,32 @@
 <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/chessground@9/assets/chessground.cburnett.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js" crossorigin="anonymous"></script>
 <style>
-:root{--bg:#f7f6f5;--fg:#4d4d4d;--card:#fff;--bd:#d9d9d9;--ac:#629924;--mut:#8a8a8a}
-@media(prefers-color-scheme:dark){:root{--bg:#161512;--fg:#bababa;--card:#262421;--bd:#3c3a37;--ac:#629924;--mut:#8a8784}}
+:root{--bg:hsl(37 10% 92%);--grad:hsl(37 12% 84%);--fg:#4d4d4d;--hi:#000;--card:#fff;--bd:#d9d9d9;--ac:#629924;--mut:#787878;--inp:hsl(37 10% 97%);--btn:#e3e3e3;--btnh:#d6d6d6;--zebra:hsl(37 12% 96.5%);--metal1:#f5f5f5;--metal2:#ededed;--link:#1b78d0;--rad:8px;
+--tab:color-mix(in oklab,#629924 30%,#fff);--tabon:color-mix(in oklab,#629924 40%,#fff);--tabfg:#4d4d4d;--hov:color-mix(in oklab,#629924 20%,#fff);--bar:hsl(37 12% 92%);--head:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:hsl(37 10% 8%);--grad:hsl(37 12% 16%);--fg:#bababa;--hi:#fff;--card:hsl(37 7% 14%);--bd:#404040;--mut:#949494;--inp:hsl(37 10% 12%);--btn:hsl(37 7% 22%);--btnh:hsl(37 7% 25%);--zebra:hsl(37 5% 19%);--metal1:hsl(37 7% 22%);--metal2:hsl(37 5% 19%);--link:#3692e7;
+--tab:color-mix(in oklab,#629924 30%,hsl(37 7% 14%));--tabon:color-mix(in oklab,#629924 40%,hsl(37 7% 14%));--tabfg:#bababa;--hov:color-mix(in oklab,#629924 20%,hsl(37 7% 14%));--bar:hsl(37 5% 24%);--head:hsl(37 7% 14%)}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px "Noto Sans",system-ui,sans-serif}
-header{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--bd)}
-header h1{font-size:17px;margin:0 auto 0 0}
-main{display:flex;gap:16px;flex-wrap:wrap;padding:16px;max-width:1100px;margin:auto}
-#left{flex:1 1 360px;max-width:560px}aside{flex:1 1 320px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;flex-wrap:wrap;padding:0 18px;min-height:52px;background:var(--head);box-shadow:0 2px 5px rgba(0,0,0,.3);position:relative;z-index:5}
+header h1{font-size:25px;font-weight:300;letter-spacing:-.3px;margin:0 26px 0 0;color:var(--hi)}
+header .sp{flex:1}header .seg{margin-right:8px}
+header button{background:none;border:0;border-radius:0;color:var(--fg);text-transform:uppercase;font-size:13px;letter-spacing:.3px;padding:0 13px;height:52px}
+header button:hover{background:var(--hov);color:var(--hi)}header button.on{color:var(--hi);box-shadow:inset 0 -3px 0 var(--ac);background:none}
+main{display:flex;gap:22px;flex-wrap:wrap;padding:20px;max-width:1400px;margin:auto;align-items:flex-start}
+#left{flex:1 1 440px;max-width:min(calc(100vh - 150px),820px);min-width:300px}aside{flex:1 1 380px;max-width:560px;display:flex;flex-direction:column;gap:10px}
 #board{width:100%;aspect-ratio:1/1}
 #pathline{margin-top:8px;color:var(--mut);font-size:13px;min-height:2.6em}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px}
+.card{background:var(--card);border-radius:3px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 button,select,input{font:inherit;color:inherit}
-button{background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:5px 10px;cursor:pointer}
-button:hover{border-color:var(--ac)}button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+button{background:var(--btn);border:0;border-radius:3px;padding:7px 12px;cursor:pointer}
+button:hover{background:var(--btnh);color:var(--hi)}button.on{background:var(--ac);color:#fff}button.on:hover{background:#74ab2e;color:#fff}
+select,input[type=number]{background:var(--inp);border:1px solid var(--bd);border-radius:3px;padding:5px 8px}input[type=range]{accent-color:#3478f6}
 .btns{display:flex;flex-wrap:wrap;gap:6px}
-table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;color:var(--mut);font-size:12px}
-td,th{padding:4px 6px}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:rgba(120,120,120,.15)}
+.tabbar{display:flex;background:var(--tab);margin:-12px -12px 0;border-radius:3px 3px 0 0}.tabbar span{padding:9px 14px;font-size:14px;color:var(--tabfg)}.tabbar span.on{background:var(--tabon);color:#fff}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;color:var(--tabfg);background:var(--tabon);font-size:12px;padding:6px 10px}
+td{padding:6px 10px;border-bottom:1px solid var(--bd)}tr[data-mv]{cursor:pointer}tr[data-mv]:hover{background:var(--hov)}
+#moves table{margin:0 -12px;width:calc(100% + 24px)}#moves>span.mut,#moves>p.mut{display:block;padding:10px 0;margin:0}
+.bar{position:relative;height:26px;min-width:90px;background:var(--bar);border-radius:4px;overflow:hidden}.bar i{position:absolute;inset:0 auto 0 0;background:#5a7d2a}
+.bar span{position:relative;display:block;text-align:center;line-height:26px;color:#fff;font-size:13px}
 .mut{color:var(--mut);font-size:13px}
 #moves{max-height:55vh;overflow:auto}
 aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{display:block}.good{color:#629924}
@@ -65,13 +75,50 @@ button.sw.on{background:#629924}button.sw.on::after{content:'✓';left:27px;colo
 #files span{flex:1;padding:0 0 .3em .35em;text-align:left}
 #ranks .d,#files .d{color:#ecdab9}#ranks .l,#files .l{color:#8e7055}
 .out main,.out header button{display:none}
-.seg{display:inline-flex}.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0;margin-left:-1px}
+.seg{display:inline-flex}
+button.sw:hover{background:#5d5b58}button.sw.on:hover{background:#629924}button.gear:hover{background:none;color:var(--hi)}button.gear.on:hover{background:#3692e7;color:#fff}button.deeper:hover{background:none}
+#evbar{border-radius:3px 3px 0 0}#evsetbody select{width:100%}summary{color:var(--mut)}
+#toast{border-radius:3px}#promo button{background:var(--btn)}
+/* ---- Lichess look: numbers taken from lichess.org's own stylesheets ---- */
+@property --p{syntax:'<percentage>';inherits:false;initial-value:50%}
+html{font-size:12px}
+body{font:1rem "Noto Sans",system-ui,sans-serif;background:var(--bg) linear-gradient(to bottom,var(--grad),var(--bg) 116px) no-repeat;min-height:100vh;overflow-x:hidden}
+header{background:none;box-shadow:none;min-height:40px;padding:0 14px}
+header h1{font-size:25px;margin:0 18px 0 0}
+header button{height:40px;font-size:12px;padding:0 11px}
+main{gap:10px;padding:10px;max-width:1800px}
+#left{max-width:min(calc(100vh - 100px),900px)}aside{gap:10px}
+.card{border-radius:var(--rad);padding:10px;overflow:hidden;box-shadow:0 2px 2px #00000014,0 3px 1px -2px #0000002e,0 1px 5px #0000001a}
+.tabbar{margin:-10px -10px 0;border-radius:0;background:var(--tab)}
+.tabbar span{padding:0 7px;font-size:.9rem;line-height:1.9em;color:var(--tabfg)}.tabbar span.on{background:var(--tabon);color:var(--hi)}
+#moves,#prac{border-bottom:3px solid var(--ac)}
+th{background:var(--tabon);color:var(--tabfg);font-size:.8rem;line-height:1.8em;padding:0 7px;font-weight:300}
+td{padding:0 7px;border:0}#moves td:first-child{line-height:30px}#moves td:nth-child(n+2){font-size:.9em}
+tbody tr:nth-child(2n){background:var(--zebra)}tr[data-mv]:hover{background:var(--hov)}
+#moves table{margin:0 -10px;width:calc(100% + 20px)}
+.bar{height:16px;min-width:90px;border-radius:var(--rad);border:1px solid rgb(from var(--fg) r g b/.17)}.bar span{line-height:14px;font-size:.9em}
+.btns button{background:none;text-transform:uppercase;line-height:1.5;padding:6px 10px;border-radius:var(--rad);transition:all .15s}
+.btns button:hover{background:color-mix(in oklab,var(--ac) 75%,var(--card));color:#fff}.btns button.on{background:var(--ac);color:#fff}
+#evalbox{padding:0;position:relative}#evbar{position:absolute;top:0;left:0;right:0;height:3px;margin:0;border-radius:0;z-index:2}
+.ceval{height:44px;padding:3px 6px 0;gap:6px;align-items:stretch;background-image:linear-gradient(to bottom,var(--metal1),var(--metal2));box-shadow:inset 0 1px 3px -2px #737373,inset 0 -4px 8px -3px rgb(0 0 0/.25)}
+.pearl{font-size:1.6em;line-height:38px;min-width:3.4em;flex:1 0 auto}
+.engine{flex:2 auto;margin-top:3px;font-size:12px;line-height:16px;color:var(--mut)}
+.cloudtag{background:color-mix(in oklab,#000 20%,var(--ac));margin-left:4px;padding:1px 3px;font-size:11px;border-radius:0;text-transform:uppercase}
+button.deeper{color:var(--link)}button.gear{font-size:16px;padding:0 6px;border-radius:0}button.gear.on{background:var(--link);color:#fff}
+button.sw{width:40px;height:24px;border-radius:12px;align-self:center}
+button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-size:11px}button.sw.on::after{left:19px}
+#evsetbody{margin:0;padding:10px;border-top:0}#evlines{margin:0}.pvl{padding:3px 10px;border-top:0;font-size:1rem}#evlines>.mut{padding:3px 10px}
+#gauge{width:10px;margin:0 4px;background:linear-gradient(to bottom,#444 var(--p),silver var(--p));overflow:hidden;position:relative;transition:--p 1s}
+#gauge.rev{transform:rotateX(180deg);justify-content:flex-end}
+#gauge::before{content:"";position:absolute;inset:0;z-index:1;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(12.5% - 2px),rgb(136 136 136/.45) calc(12.5% - 2px),rgb(136 136 136/.45) 12.5%)}
+#gauge::after{content:"";position:absolute;inset:0;z-index:3;box-shadow:inset 0 0 5px #00000080}
+#gw{position:absolute;left:0;right:0;top:50%;height:7px;margin-top:-3px;background:rgb(214 79 0/.55);z-index:2;transition:none}
 </style>
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
 <header><h1>♞ Opening Builder</h1>
 <span class="seg"><button id="colW" data-a="colW">♔ White</button><button id="colB" data-a="colB">♚ Black</button></span><span class="seg"><button id="mB" data-a="modeB">Build</button><button id="mP" data-a="modeP">Practice</button></span>
-<button data-a="load">Load…</button><button data-a="save">Save</button><button id="auth" data-a="auth">Log in with Lichess</button>
+<span class="sp"></span><button data-a="load">Load…</button><button data-a="save">Save</button><button id="auth" data-a="auth">Log in with Lichess</button>
 <input type="file" id="file" accept=".json" hidden></header>
 <section id="gate"><div class="card"><h2>♞ Opening Builder</h2>
 <p>Build an opening tree around the positions that actually come up most often in Lichess games.</p>
@@ -272,7 +319,7 @@ function render(){
   $('#info').innerHTML=`<b>${userTurn(n)?'Your move':"Opponent's move"}</b> ${end}<br>
    <span class="mut">Reach probability: ${pct(n.prob)}</span><br>
    <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
-  $('#btns').innerHTML=[['next','Next line (n)'],['back','◀ Back'],['fwd','Forward ▶'],['root','Focus root ▲'],['undo','Undo'],
+  $('#btns').innerHTML=[['next','Next line (n)'],['undo','Undo'],
     ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
     ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Depth-first'+(S.stay?' ✓':'')]]
     .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&S.stay?' class="on"':''}>${t}</button>`).join('')+
@@ -280,13 +327,13 @@ function render(){
      <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`;
   $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
   const rows=n.moves.map(m=>{const t=S.nodes.get(m.to),w=userTurn(n)?0:Math.round(2**m.p*100);
-    return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td style="background:linear-gradient(90deg,rgba(98,153,36,.5) ${w}%,transparent ${w}%)">${userTurn(n)?'—':pct(m.p)}</td><td>${pct(t.prob)}</td></tr>`}).join('');
-  $('#moves').innerHTML=(!userTurn(n)&&n.exp&&!n.N&&n.moves.length>1?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
+    return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td><div class="bar"><i style="width:${w}%"></i><span>${userTurn(n)?'—':pct(m.p)}</span></div></td><td>${pct(t.prob)}</td></tr>`}).join('');
+  $('#moves').innerHTML=`<div class="tabbar"><span class="on">${userTurn(n)?'Your moves':'Opponent’s replies'}</span></div>`+(!userTurn(n)&&n.exp&&!n.N&&n.moves.length>1?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
     +(rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
     :`<span class="mut">${userTurn(n)?'No moves yet — play one on the board.':'No moves available.'}</span>`);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
   $('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';
-  $('#settings').innerHTML=`<p class="mut">Press F to flip the board.</p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
+  $('#settings').innerHTML=`<p class="mut">Keys: ← back · → forward · ↑ focus root · N next line · F flip the board.</p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
    <p>Ratings:<br>${ALL_R.map(s=>`<label><input type="checkbox" data-cr="${s}"${cfg.ratings.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>`;
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
     cfg.speeds=[...document.querySelectorAll('[data-cs]:checked')].map(x=>x.dataset.cs);
@@ -298,6 +345,7 @@ const ENGINES={ // key: [label, file, multi-threaded]
   lite:['Stockfish 19 lite · multi-threaded','engine/stockfish-19-lite.js',true],
   full1:['Stockfish 19 · 94MB','engine/stockfish-19-single.js',false],
   full:['Stockfish 19 · 94MB · multi-threaded','engine/stockfish-19.js',true]};
+const curEngine=()=>ENGINES[cfg.ev.engine][2]&&!self.crossOriginIsolated?'lite1':cfg.ev.engine; // the saved choice itself is never overwritten
 const AUTO_DEPTH=18,HASHES=[16,32,64,128,256,512];
 const HC=navigator.hardwareConcurrency||2,THR_MAX=Math.max(1,Math.min(HC,8)),THR_REC=Math.max(1,Math.min(THR_MAX,Math.round(HC/3)));
 const EV={fen:null,cur:0,sid:0,cursid:0,cloud:null,local:null,engine:null,optKey:'',status:'',loading:false,progress:null,timer:0,draw:0,bw:true,showSet:false,wrap:new Set()};
@@ -317,7 +365,7 @@ async function cloudEval(fen){ // null when Lichess has no evaluation (404), or 
 function engineKill(){const E=EV.engine;if(E){clearTimeout(E.wd);E.w.terminate()}EV.engine=null;EV.cursid=0;EV.optKey=''}
 function engineStop(){const E=EV.engine;EV.cursid=0;if(E&&E.sq.length)E.w.postMessage('stop')}
 function ensureEngine(){
-  const e=cfg.ev,[,file,multi]=ENGINES[e.engine],threads=e.threads||THR_REC,optKey=e.engine+'|'+(multi?threads:0)+'|'+e.hash;
+  const e=cfg.ev,[,file,multi]=ENGINES[curEngine()],threads=e.threads||THR_REC,optKey=curEngine()+'|'+(multi?threads:0)+'|'+e.hash;
   if(EV.engine&&EV.optKey===optKey)return EV.engine;
   engineKill();
   let w;try{w=new Worker(file)}catch(err){EV.status='Could not start the engine: '+err.message;return null}
@@ -369,7 +417,7 @@ function drawEval(){
   const plus=!on||EV.loading||run?'':(C||EV.local)?`<button class="deeper" data-a="evrun" title="Go deeper (no depth limit)">${PLUS}</button>`:'';
   top.innerHTML=`<div class="ceval"><button class="sw${cfg.ev.on?' on':''}" data-a="evtoggle" role="switch" aria-checked="${cfg.ev.on}" title="Engine on/off"></button>
     <span class="pearl">${on?(best?scoreText(best):'…'):'—'}</span>
-    <div class="engine"><div>${SHORT[cfg.ev.engine]} <span class="tech">NNUE</span></div>
+    <div class="engine"><div>${SHORT[curEngine()]} <span class="tech">NNUE</span></div>
     <div class="info">${on?`${plus}${src?'Depth '+depth:EV.loading?'checking the cloud…':''}${src&&!useLocal?' <span class="cloudtag">CLOUD</span>':''}${run?' …':''}`:'in local browser'}</div></div>
     <button class="gear${EV.showSet?' on':''}" data-a="evgear" title="Engine settings">⚙︎</button></div>`;
   $('#evsetbody').hidden=!EV.showSet;
@@ -379,12 +427,12 @@ function drawEval(){
       return`<div class="pvl${EV.wrap.has(i)?' wrap':''}" data-pv="${i}"><b>${scoreText(p)}</b><span class="mv">${p.san}</span></div>`}).join('')
     +(EV.progress!=null?`<div class="mut">Downloading the engine… ${Math.round(EV.progress*100)}%</div>`:'')+(EV.status?`<div class="mut">${EV.status}</div>`:''):'';
   let fill=50;if(on&&best)fill=best.kind==='mate'?(best.val>0?100:0):50+50*(2/(1+Math.exp(-0.00368208*best.val))-1);
-  gw.style.height=fill+'%';$('#gauge').classList.toggle('rev',!EV.bw)}
+  $('#gauge').style.setProperty('--p',(100-fill)+'%');$('#gauge').classList.toggle('rev',!EV.bw)}
 document.addEventListener('click',e=>{const r=e.target.closest('[data-pv]');if(!r)return;const i=+r.dataset.pv;EV.wrap.has(i)?EV.wrap.delete(i):EV.wrap.add(i);drawEval()});
 function saveEv(){ls('cfg',JSON.stringify(cfg));EV.fen=null;render()}
 function drawEvalSettings(){
-  const el=$('#evsetbody');if(!el)return;const iso=self.crossOriginIsolated,e=cfg.ev,multi=ENGINES[e.engine][2],hi=HASHES.indexOf(e.hash),thr=e.threads||THR_REC;
-  el.innerHTML=`<p><label>Engine <select id="evEng">${Object.entries(ENGINES).map(([k,[l,,m]])=>`<option value="${k}"${k===e.engine?' selected':''}${m&&!iso?' disabled':''}>${l}</option>`).join('')}</select></label></p>
+  const el=$('#evsetbody');if(!el)return;const iso=self.crossOriginIsolated,e=cfg.ev,multi=ENGINES[curEngine()][2],hi=HASHES.indexOf(e.hash),thr=e.threads||THR_REC;
+  el.innerHTML=`<p><label>Engine <select id="evEng">${Object.entries(ENGINES).map(([k,[l,,m]])=>`<option value="${k}"${k===curEngine()?' selected':''}${m&&!iso?' disabled':''}>${l}</option>`).join('')}</select></label></p>
    ${iso?'':'<p class="mut">Multi-threaded engines need a cross-origin-isolated page (see vercel.json).</p>'}
    <p><label>Multiple lines <input id="evLines" type="range" min="1" max="5" value="${e.lines}"> <span id="evLinesV">${e.lines}</span></label></p>
    ${multi?`<p><label>Threads <input id="evThr" type="range" min="1" max="${THR_MAX}" value="${thr}"> <span id="evThrV">${thr}</span></label> <span class="mut">recommended ${THR_REC}, max ${THR_MAX}</span></p>`:''}
@@ -464,7 +512,7 @@ Object.assign(A,{
     for(const n of S.nodes.values())n.r=null;P.pending.clear();buildM();persist();startLine()}});
 function renderPractice(){
   const ph=P.phase,ni=[...S.nodes.values()].filter(x=>x.pign).length;
-  $('#prac').innerHTML=`<b>Practice · ${S.white?'White':'Black'}</b> <span class="mut">${S.focus===START?'from the starting position':'from: '+(sanOf(pathTo(S.focus))||'start')}</span>
+  $('#prac').innerHTML=`<div class="tabbar"><span class="on">Practice · ${S.white?'White':'Black'}</span></div><p class="mut">${S.focus===START?'from the starting position':'from: '+(sanOf(pathTo(S.focus))||'start')}</p>
    ${ph==='none'?'<p>Nothing to practise yet. Build some lines in Build mode, or check your focus and ignored positions.</p>':''}
    ${ph==='busy'?'<p class="mut">…</p>':''}
    ${ph==='ask'?`<p><b>Your move.</b></p>${P.msg?`<p class="bad">${P.msg}</p>`:''}`:''}
@@ -502,7 +550,6 @@ async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(c
 /* ---------- start ---------- */
 let w0=ls('colour')!=='b';
 try{const t=ls(slot(w0));if(t)load(JSON.parse(t));else blank(w0)}catch{blank(w0)}
-if(ENGINES[cfg.ev.engine][2]&&!self.crossOriginIsolated)cfg.ev.engine='lite1';
 applyTheme();finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
