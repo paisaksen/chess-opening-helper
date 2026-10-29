@@ -151,7 +151,7 @@ function askPromo(color){return new Promise(res=>{const el=$('#promo');
   el.classList.add('show');el.onclick=e=>{const b=e.target.closest('[data-p]');el.classList.remove('show');res(b?b.dataset.p:null)}})}
 
 /* ---------- tree model ---------- */
-function blank(white,undo){S={white,flip:false,limit:-Infinity,limit2:null,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
+function blank(white,undo){S={white,flip:false,limit:-Infinity,slimit:null,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
 function node(fen){const k=key(fen);if(!S.nodes.has(k))S.nodes.set(k,{k,fen,moves:[],prob:-Infinity,ignore:false});return S.nodes.get(k)}
 const cur=()=>S.nodes.get(S.path.at(-1));
 const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
@@ -188,12 +188,13 @@ function bestUnder(root,limit){ // best unfinished line below root (skipping pru
   if(!best)return null;const rt=[best.k];while(rt[0]!==root)rt.unshift(from.get(rt[0]));return rt}
 function nextLine(){ // returns the full route to the next unfinished line inside the focus
   const base=k=>{const i=S.path.indexOf(k);return i>=0?S.path.slice(0,i+1):pathTo(k)};
-  if(S.stay){ // depth-first: finish what is below here, then back up to the nearest position with an unfinished line (always at or above the start limit)
+  const start=S.stay?(S.slimit??S.limit):S.limit; // the lowest probability this may jump to
+  if(S.stay){ // depth-first: finish what is below here, then back up to the nearest position with an unfinished line
     const here=S.path.at(-1),sub=new Set(subtree(S.focus).map(x=>x.k));
-    if(sub.has(here)){const rt=bestUnder(here,S.limit);if(rt)return[...S.path,...rt.slice(1)]}
+    if(sub.has(here)){const rt=bestUnder(here,start);if(rt)return[...S.path,...rt.slice(1)]}
     for(let i=S.path.length-2;i>=0;i--){if(!sub.has(S.path[i]))continue;
-      const rt=bestUnder(S.path[i],S.limit);if(rt)return[...S.path.slice(0,i+1),...rt.slice(1)]}}
-  const rt=bestUnder(S.focus,S.limit);return rt&&[...base(S.focus),...rt.slice(1)]}
+      const rt=bestUnder(S.path[i],start);if(rt)return[...S.path.slice(0,i+1),...rt.slice(1)]}}
+  const rt=bestUnder(S.focus,start);return rt&&[...base(S.focus),...rt.slice(1)]}
 async function fetchOpp(n){
   const u=`https://explorer.lichess.ovh/lichess?speeds=${cfg.speeds}&ratings=${cfg.ratings}&moves=99&fen=${encodeURIComponent(n.fen)}`;
   const r=await fetch(u,{headers:cfg.token?{Authorization:'Bearer '+cfg.token}:{}});
@@ -202,7 +203,7 @@ async function fetchOpp(n){
   const d=await r.json(),g={};
   for(const x of d.moves||[]){const u=fixCastle(n,x.uci);g[u]=(g[u]||0)+x.white+x.draws+x.black}
   n.g=g;n.exp=true;buildOpp(n)}
-async function enter(p,lim=S.stay?(S.limit2??S.limit):S.limit){ // lim: how unlikely an auto-played reply may be // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
+async function enter(p,lim=S.limit){ // lim: how unlikely an auto-played reply may be (the continue limit) // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
   S.path=p;const n=cur();
   if(!userTurn(n)&&!over(n)&&!n.exp){await fetchOpp(n);recompute();
     const m=n.N>0||n.moves.length===1?n.moves[0]:null;if(m&&n.prob+m.p>=lim)S.path=[...p,m.to]}}
@@ -214,12 +215,12 @@ async function userMove(uci){const n=cur();
 /* ---------- save / load ---------- */
 const ser=()=>{const opp=[],user=[];
   for(const n of S.nodes.values()){if(n.exp)opp.push([n.k,n.g]);else if(userTurn(n)&&n.moves.length)user.push([n.k,n.moves.map(m=>m.uci)])}
-  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,stay:S.stay,limit2:S.limit2,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
+  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,stay:S.stay,slimit:S.slimit,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
     ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k),
     pign:[...S.nodes.values()].filter(n=>n.pign).map(n=>n.k),
     res:[...S.nodes.values()].filter(n=>n.r&&n.r[0]+n.r[1]>0).map(n=>[n.k,n.r[0],n.r[1]])}};
 function load(o){if(o.v!==3&&o.v!==4)throw Error('This tree was saved by an older version and cannot be loaded.');
-  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;S.limit2=o.limit2==null?null:o.limit2;
+  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;S.slimit=o.slimit==null?null:o.slimit;
   const om=new Map(o.opp),um=new Map(o.user),seen=new Set(),q=[START];
   while(q.length){const k=q.shift();if(seen.has(k))continue;seen.add(k);const n=S.nodes.get(k);
     if(om.has(k)){n.g=om.get(k);n.exp=true;buildOpp(n)}else if(um.has(k))um.get(k).forEach(u=>addMove(n,u,0));
@@ -253,7 +254,7 @@ const A={
   load:()=>$('#file').click(),
   auth:()=>cfg.token?logout():login(),
   save(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(ser())],{type:'application/json'}));a.download=(S.white?'white':'black')+'-opening-tree.json';a.click()},
-  next:()=>nav(async()=>{const r=nextLine();if(!r)throw Error('No unfinished lines left (check focus and limit).');await enter(r,S.limit)}),
+  next:()=>nav(async()=>{const r=nextLine();if(!r)throw Error('No unfinished lines left (check focus and limit).');await enter(r,S.stay?(S.slimit??S.limit):S.limit)}),
   back:()=>nav(async()=>{if(S.path.length>1)S.path=S.path.slice(0,-1)}),
   fwd:()=>nav(async()=>{const n=cur();
     if(!userTurn(n)&&!over(n)){if(!n.exp)return enter(S.path);if(!n.N&&n.moves.length>1)throw Error("No Lichess games here – choose the opponent's move yourself.")}
@@ -324,12 +325,12 @@ function render(){
     ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
     ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Depth-first'+(S.stay?' ✓':'')]]
     .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&S.stay?' class="on"':''}>${t}</button>`).join('')+
-    `<label class="mut" style="margin-top:6px">${S.stay?'Start limit':'Limit'} (log₂, e.g. −5 ≈ 1 in 32 games)
+    `<label class="mut" style="margin-top:6px">${S.stay?'Continue limit':'Limit'} (log₂, e.g. −5 ≈ 1 in 32 games)
      <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`
-    +(S.stay?`<label class="mut" style="margin-top:6px">Continue limit: replies auto-play down to here (blank = same as start)
-     <input id="lim2" type="number" max="-1" step="1" style="width:5em" value="${S.limit2==null?'':S.limit2}" placeholder="same"></label>`:'');
+    +(S.stay?`<label class="mut" style="margin-top:6px">Start limit: Next line only jumps to positions above this (blank = same as continue limit)
+     <input id="lim2" type="number" max="-1" step="1" style="width:5em" value="${S.slimit==null?'':S.slimit}" placeholder="same"></label>`:'');
   $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
-  if($('#lim2'))$('#lim2').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit2=null;else if(+v<0)S.limit2=+v;else throw Error('Limit must be negative')})};
+  if($('#lim2'))$('#lim2').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.slimit=null;else if(+v<0)S.slimit=+v;else throw Error('Limit must be negative')})};
   const rows=n.moves.map(m=>{const t=S.nodes.get(m.to),w=userTurn(n)?0:Math.round(2**m.p*100);
     return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td><div class="bar"><i style="width:${w}%"></i><span>${userTurn(n)?'—':pct(m.p)}</span></div></td><td>${pct(t.prob)}</td></tr>`}).join('');
   $('#moves').innerHTML=`<div class="tabbar"><span class="on">${userTurn(n)?'Your moves':'Opponent’s replies'}</span></div>`+(!userTurn(n)&&n.exp&&!n.N&&n.moves.length>1?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
