@@ -48,7 +48,7 @@ aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{disp
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
-#boardrow{display:flex;gap:6px;align-items:stretch}#boardwrap{position:relative;container-type:inline-size;flex:1;min-width:0}
+#boardrow{display:flex;gap:6px;align-items:stretch}#boardwrap{position:relative;container-type:inline-size;flex:none;width:100%} /* width is snapped to whole squares by fitBoard() */
 #gauge{display:none;width:16px;flex:none;border-radius:4px;overflow:hidden;background:#403d39;flex-direction:column;justify-content:flex-end}
 html.ev #gauge{display:flex}#gauge.rev{justify-content:flex-start}#gw{background:#f0f0f0;height:50%;transition:height .3s}
 #evbar{height:3px;margin:-12px -12px 9px;border-radius:8px 8px 0 0;overflow:hidden}#evbar span{display:block;height:100%;width:0;background:#629924;transition:width .3s}
@@ -331,7 +331,7 @@ function render(){
   document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
-  evalSync(n.fen,bw);drawEvalSettings();
+  evalSync(n.fen,bw);drawEvalSettings();fitBoard();
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
@@ -477,6 +477,13 @@ Object.assign(A,{
   evgear(){EV.showSet=!EV.showSet;drawEval()},
   evrun(){if(!EV.local?.running)localSearch(0)}});
 
+/* ---------- board size ---------- */
+function fitBoard(){ // Chessground rounds the board to whole squares; give it a width that already is one, so the board, labels and gauge move together
+  if(typeof getComputedStyle==='undefined')return;
+  const row=$('#boardrow'),g=$('#gauge'),w=$('#boardwrap');if(!row||!w||!row.clientWidth)return;
+  const gs=getComputedStyle(g).display==='none'?0:g.offsetWidth+8,dpr=window.devicePixelRatio||1;
+  let unit=8;for(let m=1;m<=8;m++){const d=8*m*dpr;if(Math.abs(d/8-Math.round(d/8))<1e-6){unit=8*m;break}} // squares that are whole device pixels too
+  const px=Math.max(unit*10,Math.floor((row.clientWidth-gs)/unit)*unit);if(w.style.width!==px+'px')w.style.width=px+'px'}
 /* ---------- practice mode ---------- */
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const qOf=n=>n.moves.length?((n.r?.[1]||0)+1)/((n.r?.[0]||0)+(n.r?.[1]||0)+2):1; // chance of getting this position wrong: (wrong+1)/(attempts+2); 1 if you have no move stored
@@ -582,6 +589,7 @@ async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(c
 cm=['w','b','x'].includes(ls('colour'))?ls('colour'):'w';
 makeTree(true,ls(slot(true)));makeTree(false,ls(slot(false)));
 S=cm==='b'?T.b:T.w;if(cm==='x')T.w.flip=T.b.flip=false;
-applyTheme();finishLogin();
+applyTheme();fitBoard();if(typeof ResizeObserver!=='undefined'){new ResizeObserver(fitBoard).observe($('#left'));addEventListener('resize',fitBoard)}
+finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
