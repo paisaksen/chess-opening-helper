@@ -113,6 +113,7 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 #gauge::before{content:"";position:absolute;inset:0;z-index:1;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(12.5% - 2px),rgb(136 136 136/.45) calc(12.5% - 2px),rgb(136 136 136/.45) 12.5%)}
 #gauge::after{content:"";position:absolute;inset:0;z-index:3;box-shadow:inset 0 0 5px #00000080}
 #gw{position:absolute;left:0;right:0;top:50%;height:7px;margin-top:-3px;background:rgb(214 79 0/.55);z-index:2;transition:none}
+.note{margin-top:8px;padding:7px 9px;border-radius:var(--rad);background:color-mix(in oklab,var(--link) 20%,var(--card));color:var(--hi);line-height:1.4}
 </style>
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
@@ -143,7 +144,7 @@ try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
 cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev);
 const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity}; // settings shared by every tree
 const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null};ls('cfg',JSON.stringify(cfg))};
-let S=null,busy=false,mode='b',cm='w'; // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
+let S=null,busy=false,mode='b',cm='w',NOTE=''; // NOTE: why no reply was played after your last move // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
 const T={w:null,b:null},P={prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
 const sw=(t,fn)=>{const old=S;S=t;try{return fn()}finally{S=old}}; // run fn with another tree as the active one
 function applyTheme(){const l='#ecdab9',d='#ae8a68';let q='';
@@ -160,6 +161,7 @@ function node(fen){const k=key(fen);if(!S.nodes.has(k))S.nodes.set(k,{k,fen,move
 const cur=()=>S.nodes.get(S.path.at(-1));
 const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
 const over=n=>new Chess(n.fen).game_over();
+const overText=n=>{const c=new Chess(n.fen);return c.in_checkmate()?'Checkmate – the game is over, so there is no reply.':c.in_stalemate()?'Stalemate – the game is over, so there is no reply.':'The game is drawn, so there is no reply.'};
 function fixCastle(n,u){const t={e1h1:'e1g1',e1a1:'e1c1',e8h8:'e8g8',e8a8:'e8c8'}[u];
   return t&&new Chess(n.fen).get(u.slice(0,2))?.type==='k'?t:u}
 function buildOpp(n){ // all legal moves of an opponent position, probability (games+1)/(N+L) from the stored Lichess counts
@@ -207,14 +209,21 @@ async function fetchOpp(n){
   const d=await r.json(),g={};
   for(const x of d.moves||[]){const u=fixCastle(n,x.uci);g[u]=(g[u]||0)+x.white+x.draws+x.black}
   n.g=g;n.exp=true;buildOpp(n)}
-async function enter(p,lim=G.limit){ // lim: how unlikely an auto-played reply may be (the continue limit) // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
-  S.path=p;const n=cur();
-  if(!userTurn(n)&&!over(n)&&!n.exp){await fetchOpp(n);recompute();
-    const m=n.N>0||n.moves.length===1?n.moves[0]:null;if(m&&n.prob+m.p>=lim)S.path=[...p,m.to]}}
-async function userMove(uci){const n=cur();
+async function enter(p,lim=G.limit,explain=false){ // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply (lim: how unlikely that reply may be)
+  S.path=p;const n=cur();let why='';
+  if(!userTurn(n)){
+    if(over(n))why=overText(n);
+    else if(n.exp)why=((S.parents.get(n.k)||[]).length>1?'Transposition: this position is already in your tree (reached by another move order), so no reply was played.':'This position is already in your tree, so no reply was played. Pick one of the replies, or press → to follow the most likely.');
+    else{await fetchOpp(n);recompute();
+      const m=n.N>0||n.moves.length===1?n.moves[0]:null;
+      if(m&&n.prob+m.p>=lim)S.path=[...p,m.to];
+      else if(m)why=`Limit reached: the most likely reply (${m.san}, ${pct(m.p)}) would lead to a position at ${pct(n.prob+m.p)}, below your ${G.stay?'continue ':''}limit of ${pct(lim)}.`;
+      else if(n.moves.length>1)why='Lichess has no games for this position (with your speed and rating filters), so every legal reply is equally likely. Pick the opponent’s reply yourself.'}}
+  if(explain&&why)NOTE=why}
+async function userMove(uci){const n=cur(),mine=userTurn(n);
   if(!userTurn(n)&&!n.exp)await fetchOpp(n);
   const m=n.moves.find(x=>x.uci===uci)||(userTurn(n)?addMove(n,uci,0):null);
-  if(!m)throw Error('Illegal move');recompute();await enter([...S.path,m.to])}
+  if(!m)throw Error('Illegal move');recompute();await enter([...S.path,m.to],undefined,mine)}
 
 /* ---------- save / load ---------- */
 const ser=()=>{const opp=[],user=[];
@@ -239,11 +248,11 @@ const persistAll=()=>{for(const t of [T.w,T.b])sw(t,()=>ls(slot(S.white),JSON.st
 function makeTree(white,json){const old=S;S=null;try{if(json)load(JSON.parse(json));else blank(white)}catch{S=null;blank(white)}const t=S;S=old;return t}
 async function ensureRoot(){const r=cur(); // a fresh Black tree needs White's first moves from Lichess
   if(cfg.token&&S.path.length===1&&!r.moves.length&&!userTurn(r))await act(async()=>{await enter([START])});else{render();persist()}}
-async function setCM(c){if(busy||c===cm)return;const was=mode;if(was==='p')leavePractice();
+async function setCM(c){if(busy||c===cm)return;NOTE='';const was=mode;if(was==='p')leavePractice();
   persistAll();cm=c;S=c==='b'?T.b:T.w;if(c==='x')T.w.flip=T.b.flip=false;
   if(was==='p'){enterPractice();return}
   await ensureRoot();persistAll()}
-async function flipTree(){if(busy)return;persistAll();S=S.white?T.b:T.w;S.flip=false;await ensureRoot()} // in Both mode the board orientation decides the tree
+async function flipTree(){if(busy)return;NOTE='';persistAll();S=S.white?T.b:T.w;S.flip=false;await ensureRoot()} // in Both mode the board orientation decides the tree
 function activeTrees(){const f=[T.w,T.b].find(t=>t.focus!==START); // a focus in one tree leaves the other out
   return cm==='w'?[T.w]:cm==='b'?[T.b]:f?[f]:[T.w,T.b]}
 function nextTarget(){const ts=activeTrees();
@@ -253,11 +262,11 @@ function nextTarget(){const ts=activeTrees();
   let best=null;for(const t of order){const rt=sw(t,nextLine);if(!rt)continue;const p=t.nodes.get(rt.at(-1)).prob;if(!best||p>best.p)best={t,route:rt,p}}return best}
 
 /* ---------- actions ---------- */
-async function act(fn){if(busy)return;busy=true;const s=JSON.stringify(ser());
+async function act(fn){if(busy)return;busy=true;NOTE='';const s=JSON.stringify(ser());
   try{await fn();S.undo.push(s);if(S.undo.length>30)S.undo.shift()}
   catch(e){load(JSON.parse(s));if(e.message!=='Cancelled')toast(e.message)} // cancelling a confirmation is not an error
   busy=false;recompute();render();persist()}
-async function nav(fn){if(busy)return;busy=true;const t0=S,p0=S.path,f0=S.focus;
+async function nav(fn){if(busy)return;busy=true;NOTE='';const t0=S,p0=S.path,f0=S.focus;
   try{await fn()}catch(e){S=t0;S.path=p0;S.focus=f0;toast(e.message)}
   busy=false;recompute();render();persist()}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000)}
@@ -281,7 +290,7 @@ const A={
     let b=null;for(const m of n.moves){const t=S.nodes.get(m.to);if(!t.ignore&&(!b||t.prob>b.t.prob))b={m,t}}
     if(!b)throw Error('No further moves in the tree.');await enter([...S.path,b.m.to])}),
   root:()=>nav(async()=>{const i=S.path.indexOf(S.focus);S.path=i>=0?S.path.slice(0,i+1):pathTo(S.focus)}),
-  undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
+  undo(){NOTE='';const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
   reviveall:()=>act(async()=>{subtree(cur().k).forEach(x=>x.ignore=false)}),
   stay(){G.stay=!G.stay;saveG();render()},
   focus:()=>act(async()=>{S.focus=cur().k;(S===T.w?T.b:T.w).focus=START}), // one focus overall
@@ -346,6 +355,7 @@ function render(){
   $('#info').innerHTML=`<b>${userTurn(n)?'Your move':"Opponent's move"}</b> ${end}<br>
    <span class="mut">Reach probability: ${pct(n.prob)}</span><br>
    <span class="mut">${S.nodes.size} positions · ${S.focus===START?(cm==='x'&&(S===T.w?T.b:T.w).focus!==START?'focus is in the other tree':'no focus'):'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
+  if(NOTE)$('#info').innerHTML+=`<div class="note">${NOTE}</div>`;
   $('#btns').innerHTML=[['next','Next line (n)'],['undo','Undo'],
     ...(S.focus!==n.k?[['focus','Focus here']]:[]),...((cm==='x'?[T.w,T.b]:[S]).some(t=>t.focus!==START)?[['unfocus','Unfocus']]:[]),
     ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Depth-first'+(G.stay?' ✓':'')]]
