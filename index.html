@@ -117,7 +117,7 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
 <header><h1>♞ Opening Builder</h1>
-<span class="seg"><button id="colW" data-a="colW">♔ White</button><button id="colB" data-a="colB">♚ Black</button></span><span class="seg"><button id="mB" data-a="modeB">Build</button><button id="mP" data-a="modeP">Practice</button></span>
+<span class="seg"><button id="colW" data-a="colW">♔ White</button><button id="colB" data-a="colB">♚ Black</button><button id="colX" data-a="colX">◐ Both</button></span><span class="seg"><button id="mB" data-a="modeB">Build</button><button id="mP" data-a="modeP">Practice</button></span>
 <span class="sp"></span><button data-a="load">Load…</button><button data-a="save">Save</button><button id="auth" data-a="auth">Log in with Lichess</button>
 <input type="file" id="file" accept=".json" hidden></header>
 <section id="gate"><div class="card"><h2>♞ Opening Builder</h2>
@@ -141,7 +141,11 @@ const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.s
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
 cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev);
-let S=null,busy=false,mode='b';const B={path:[START]},P={phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:'',pending:new Set()};
+const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity}; // settings shared by every tree
+const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null};ls('cfg',JSON.stringify(cfg))};
+let S=null,busy=false,mode='b',cm='w'; // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
+const T={w:null,b:null},P={prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
+const sw=(t,fn)=>{const old=S;S=t;try{return fn()}finally{S=old}}; // run fn with another tree as the active one
 function applyTheme(){const l='#ecdab9',d='#ae8a68';let q='';
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2)q+=`M${c} ${r}h1v1h-1z`;
   const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'><path fill='${d}' d='${q}'/></svg>`;
@@ -151,7 +155,7 @@ function askPromo(color){return new Promise(res=>{const el=$('#promo');
   el.classList.add('show');el.onclick=e=>{const b=e.target.closest('[data-p]');el.classList.remove('show');res(b?b.dataset.p:null)}})}
 
 /* ---------- tree model ---------- */
-function blank(white,undo){S={white,flip:false,limit:-Infinity,slimit:null,stay:false,focus:START,path:[START],nodes:new Map(),undo:undo||[],plimit:-Infinity};node(START_FEN);recompute()}
+function blank(white,undo){S={white,flip:false,focus:START,path:[START],nodes:new Map(),undo:undo||[]};T[white?'w':'b']=S;node(START_FEN);recompute()}
 function node(fen){const k=key(fen);if(!S.nodes.has(k))S.nodes.set(k,{k,fen,moves:[],prob:-Infinity,ignore:false});return S.nodes.get(k)}
 const cur=()=>S.nodes.get(S.path.at(-1));
 const userTurn=n=>(n.fen.split(' ')[1]==='w')===S.white;
@@ -188,8 +192,8 @@ function bestUnder(root,limit){ // best unfinished line below root (skipping pru
   if(!best)return null;const rt=[best.k];while(rt[0]!==root)rt.unshift(from.get(rt[0]));return rt}
 function nextLine(){ // returns the full route to the next unfinished line inside the focus
   const base=k=>{const i=S.path.indexOf(k);return i>=0?S.path.slice(0,i+1):pathTo(k)};
-  const start=S.stay?(S.slimit??S.limit):S.limit; // the lowest probability this may jump to
-  if(S.stay){ // depth-first: finish what is below here, then back up to the nearest position with an unfinished line
+  const start=G.stay?(G.slimit??G.limit):G.limit; // the lowest probability this may jump to
+  if(G.stay){ // depth-first: finish what is below here, then back up to the nearest position with an unfinished line
     const here=S.path.at(-1),sub=new Set(subtree(S.focus).map(x=>x.k));
     if(sub.has(here)){const rt=bestUnder(here,start);if(rt)return[...S.path,...rt.slice(1)]}
     for(let i=S.path.length-2;i>=0;i--){if(!sub.has(S.path[i]))continue;
@@ -203,7 +207,7 @@ async function fetchOpp(n){
   const d=await r.json(),g={};
   for(const x of d.moves||[]){const u=fixCastle(n,x.uci);g[u]=(g[u]||0)+x.white+x.draws+x.black}
   n.g=g;n.exp=true;buildOpp(n)}
-async function enter(p,lim=S.limit){ // lim: how unlikely an auto-played reply may be (the continue limit) // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
+async function enter(p,lim=G.limit){ // lim: how unlikely an auto-played reply may be (the continue limit) // go to a position; if the opponent is to move there, fetch Lichess data and auto-play the most common database reply
   S.path=p;const n=cur();
   if(!userTurn(n)&&!over(n)&&!n.exp){await fetchOpp(n);recompute();
     const m=n.N>0||n.moves.length===1?n.moves[0]:null;if(m&&n.prob+m.p>=lim)S.path=[...p,m.to]}}
@@ -215,46 +219,62 @@ async function userMove(uci){const n=cur();
 /* ---------- save / load ---------- */
 const ser=()=>{const opp=[],user=[];
   for(const n of S.nodes.values()){if(n.exp)opp.push([n.k,n.g]);else if(userTurn(n)&&n.moves.length)user.push([n.k,n.moves.map(m=>m.uci)])}
-  return{v:4,white:S.white,limit:isFinite(S.limit)?S.limit:null,plimit:isFinite(S.plimit)?S.plimit:null,stay:S.stay,slimit:S.slimit,focus:S.focus,path:mode==='p'?B.path:S.path,opp,user,
+  return{v:4,white:S.white,focus:S.focus,path:mode==='p'&&S.bpath?S.bpath:S.path,opp,user,
     ignored:[...S.nodes.values()].filter(n=>n.ignore).map(n=>n.k),
     pign:[...S.nodes.values()].filter(n=>n.pign).map(n=>n.k),
     res:[...S.nodes.values()].filter(n=>n.r&&n.r[0]+n.r[1]>0).map(n=>[n.k,n.r[0],n.r[1]])}};
 function load(o){if(o.v!==3&&o.v!==4)throw Error('This tree was saved by an older version and cannot be loaded.');
-  blank(o.white,S?S.undo:[]);S.limit=o.limit==null?-Infinity:o.limit;S.stay=!!o.stay;S.slimit=o.slimit==null?null:o.slimit;
+  blank(o.white,S?S.undo:[]);
   const om=new Map(o.opp),um=new Map(o.user),seen=new Set(),q=[START];
   while(q.length){const k=q.shift();if(seen.has(k))continue;seen.add(k);const n=S.nodes.get(k);
     if(om.has(k)){n.g=om.get(k);n.exp=true;buildOpp(n)}else if(um.has(k))um.get(k).forEach(u=>addMove(n,u,0));
     for(const m of n.moves)if(!seen.has(m.to)&&(om.has(m.to)||um.has(m.to)))q.push(m.to)}
   (o.ignored||[]).forEach(k=>{if(S.nodes.has(k))S.nodes.get(k).ignore=true});
   (o.pign||[]).forEach(k=>{if(S.nodes.has(k))S.nodes.get(k).pign=true});(o.res||[]).forEach(([k,c,w])=>{if(S.nodes.has(k))S.nodes.get(k).r=[c,w]});
-  S.plimit=o.plimit==null?-Infinity:o.plimit;recompute();
+  recompute();
   if(o.path?.every(k=>S.nodes.has(k)))S.path=o.path;if(S.nodes.has(o.focus))S.focus=o.focus}
 const slot=w=>w?'tree-white':'tree-black';
-const persist=()=>{ls(slot(S.white),JSON.stringify(ser()));ls('colour',S.white?'w':'b')};
-async function setColour(w){if(busy||S.white===w)return;persist();
-  const t=ls(slot(w));try{t?load(JSON.parse(t)):blank(w);if(S.white!==w)blank(w)}catch{blank(w)}
-  S.undo=[];const r=cur();
-  if(cfg.token&&S.path.length===1&&!r.moves.length&&!userTurn(r))await act(async()=>{await enter([START])});
-  else{render();persist()}}
+const persist=()=>{ls(slot(S.white),JSON.stringify(ser()));ls('colour',cm)};
+const persistAll=()=>{for(const t of [T.w,T.b])sw(t,()=>ls(slot(S.white),JSON.stringify(ser())));ls('colour',cm)};
+function makeTree(white,json){const old=S;S=null;try{if(json)load(JSON.parse(json));else blank(white)}catch{S=null;blank(white)}const t=S;S=old;return t}
+async function ensureRoot(){const r=cur(); // a fresh Black tree needs White's first moves from Lichess
+  if(cfg.token&&S.path.length===1&&!r.moves.length&&!userTurn(r))await act(async()=>{await enter([START])});else{render();persist()}}
+async function setCM(c){if(busy||c===cm)return;const was=mode;if(was==='p')leavePractice();
+  persistAll();cm=c;S=c==='b'?T.b:T.w;if(c==='x')T.w.flip=T.b.flip=false;
+  if(was==='p'){enterPractice();return}
+  await ensureRoot();persistAll()}
+async function flipTree(){if(busy)return;persistAll();S=S.white?T.b:T.w;S.flip=false;await ensureRoot()} // in Both mode the board orientation decides the tree
+function activeTrees(){const f=[T.w,T.b].find(t=>t.focus!==START); // a focus in one tree leaves the other out
+  return cm==='w'?[T.w]:cm==='b'?[T.b]:f?[f]:[T.w,T.b]}
+function nextTarget(){const ts=activeTrees();
+  if(ts.length===1){const rt=sw(ts[0],nextLine);return rt&&{t:ts[0],route:rt}}
+  const order=S===T.w?[T.w,T.b]:[T.b,T.w];
+  if(G.stay){for(const t of order){const rt=sw(t,nextLine);if(rt)return{t,route:rt}}return null} // depth-first: finish this tree first
+  let best=null;for(const t of order){const rt=sw(t,nextLine);if(!rt)continue;const p=t.nodes.get(rt.at(-1)).prob;if(!best||p>best.p)best={t,route:rt,p}}return best}
 
 /* ---------- actions ---------- */
 async function act(fn){if(busy)return;busy=true;const s=JSON.stringify(ser());
   try{await fn();S.undo.push(s);if(S.undo.length>30)S.undo.shift()}
-  catch(e){load(JSON.parse(s));toast(e.message)}
+  catch(e){load(JSON.parse(s));if(e.message!=='Cancelled')toast(e.message)} // cancelling a confirmation is not an error
   busy=false;recompute();render();persist()}
-async function nav(fn){if(busy)return;busy=true;const p0=S.path,f0=S.focus;
-  try{await fn()}catch(e){S.path=p0;S.focus=f0;toast(e.message)}
+async function nav(fn){if(busy)return;busy=true;const t0=S,p0=S.path,f0=S.focus;
+  try{await fn()}catch(e){S=t0;S.path=p0;S.focus=f0;toast(e.message)}
   busy=false;recompute();render();persist()}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',5000)}
 const A={
-  colW:()=>switchColour(true),
-  colB:()=>switchColour(false),
+  colW:()=>setCM('w'),
+  colB:()=>setCM('b'),
+  colX:()=>setCM('x'),
   reset:()=>act(async()=>{if(!confirm('Erase your '+(S.white?'White':'Black')+' tree and start again?'))throw Error('Cancelled');
     blank(S.white,S.undo);await enter([START])}),
   load:()=>$('#file').click(),
   auth:()=>cfg.token?logout():login(),
-  save(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(ser())],{type:'application/json'}));a.download=(S.white?'white':'black')+'-opening-tree.json';a.click()},
-  next:()=>nav(async()=>{const r=nextLine();if(!r)throw Error('No unfinished lines left (check focus and limit).');await enter(r,S.stay?(S.slimit??S.limit):S.limit)}),
+  save(){const a=document.createElement('a'),both=cm==='x';
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(both?{v:5,white:sw(T.w,ser),black:sw(T.b,ser)}:ser())],{type:'application/json'}));
+    a.download=both?'opening-trees.json':(S.white?'white':'black')+'-opening-tree.json';a.click()},
+  next:()=>nav(async()=>{const r=nextTarget();if(!r)throw Error('No unfinished lines left (check focus and limit).');
+    if(r.t!==S){persistAll();S=r.t;S.flip=false} // Both mode: the next line is in the other tree
+    await enter(r.route,G.stay?(G.slimit??G.limit):G.limit)}),
   back:()=>nav(async()=>{if(S.path.length>1)S.path=S.path.slice(0,-1)}),
   fwd:()=>nav(async()=>{const n=cur();
     if(!userTurn(n)&&!over(n)){if(!n.exp)return enter(S.path);if(!n.N&&n.moves.length>1)throw Error("No Lichess games here – choose the opponent's move yourself.")}
@@ -263,12 +283,12 @@ const A={
   root:()=>nav(async()=>{const i=S.path.indexOf(S.focus);S.path=i>=0?S.path.slice(0,i+1):pathTo(S.focus)}),
   undo(){const s=S.undo.pop();if(!s)return toast('Nothing to undo');load(JSON.parse(s));render();persist()},
   reviveall:()=>act(async()=>{subtree(cur().k).forEach(x=>x.ignore=false)}),
-  stay:()=>act(async()=>{S.stay=!S.stay}),
-  focus:()=>act(async()=>{S.focus=cur().k}),
-  unfocus:()=>act(async()=>{S.focus=START}),
+  stay(){G.stay=!G.stay;saveG();render()},
+  focus:()=>act(async()=>{S.focus=cur().k;(S===T.w?T.b:T.w).focus=START}), // one focus overall
+  unfocus:()=>act(async()=>{T.w.focus=START;T.b.focus=START}),
   prune:()=>act(async()=>{const n=cur();if(n.k===START)throw Error('Cannot prune the starting position.');
     n.ignore=!n.ignore;if(n.ignore){S.path=S.path.slice(0,-1);if(S.focus===n.k)S.focus=S.path.at(-1)}}),
-  flip(){S.flip=!S.flip;render()},
+  flip(){if(cm==='x'&&mode==='b')flipTree();else{S.flip=!S.flip;render()}},
   del:()=>act(async()=>{const n=cur(),mine=userTurn(n);
     if(S.path.length<2)throw Error('Cannot delete the starting position.');
     if(mine&&!n.moves.length)throw Error('There are no moves of yours below this position.');
@@ -286,7 +306,12 @@ document.addEventListener('keydown',e=>{
   const k={ArrowLeft:'back',ArrowRight:'fwd',ArrowUp:'root',n:'next',N:'next',f:'flip',F:'flip'}[e.key];if(k){e.preventDefault();A[k]()}});
 $('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;e.target.value='';if(mode==='p')leavePractice();
   try{const t=JSON.parse((await f.text()).replace(/-Infinity/g,'null'));
-    if(!!t.white!==S.white)await setColour(!!t.white);
+    if(t.v===5){ // a file with both trees
+      if((T.w.nodes.size>1||T.b.nodes.size>1)&&!confirm('Replace both of your trees with this file?'))return;
+      S=null;load(t.white);S=null;load(t.black);S=cm==='b'?T.b:T.w;if(cm==='x')T.w.flip=T.b.flip=false;
+      persistAll();render();return}
+    const w=!!t.white;
+    if(cm==='x'){S=w?T.w:T.b;S.flip=false}else if((cm==='w')!==w)await setCM(w?'w':'b');
     if(S.nodes.size>1&&!confirm('Replace your current '+(S.white?'White':'Black')+' tree with this file?'))return;
     act(async()=>{load(t)})}
   catch(err){toast('Could not load file: '+err.message)}};
@@ -304,7 +329,7 @@ function subtree(k){const seen=new Set(),out=[];(function w(k){if(seen.has(k))re
 function sanOf(path){let t='';path.slice(1).forEach((k,i)=>{const m=S.nodes.get(path[i]).moves.find(m=>m.to===k);if(m)t+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});return t.trim()}
 function render(){
   document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');
-  $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
+  $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   evalSync(n.fen,bw);drawEvalSettings();
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
@@ -320,24 +345,24 @@ function render(){
   const end=c.in_checkmate()?'Checkmate.':c.in_stalemate()?'Stalemate.':c.in_draw()?'Draw.':'';
   $('#info').innerHTML=`<b>${userTurn(n)?'Your move':"Opponent's move"}</b> ${end}<br>
    <span class="mut">Reach probability: ${pct(n.prob)}</span><br>
-   <span class="mut">${S.nodes.size} positions · ${S.focus===START?'no focus':'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
+   <span class="mut">${S.nodes.size} positions · ${S.focus===START?(cm==='x'&&(S===T.w?T.b:T.w).focus!==START?'focus is in the other tree':'no focus'):'focus: '+(sanOf(pathTo(S.focus))||'start')}${n.ignore?' · <b>pruned</b>':''}</span>`;
   $('#btns').innerHTML=[['next','Next line (n)'],['undo','Undo'],
-    ...(S.focus!==n.k?[['focus','Focus here']]:[]),...(S.focus!==START?[['unfocus','Unfocus']]:[]),
-    ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Depth-first'+(S.stay?' ✓':'')]]
-    .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&S.stay?' class="on"':''}>${t}</button>`).join('')+
-    `<label class="mut" style="margin-top:6px">${S.stay?'Continue limit':'Limit'} (log₂, e.g. −5 ≈ 1 in 32 games)
-     <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.limit)?S.limit:''}" placeholder="none"></label>`
-    +(S.stay?`<label class="mut" style="margin-top:6px">Start limit: Next line only jumps to positions above this (blank = same as continue limit)
-     <input id="lim2" type="number" max="-1" step="1" style="width:5em" value="${S.slimit==null?'':S.slimit}" placeholder="same"></label>`:'');
-  $('#lim').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.limit=-Infinity;else if(+v<0)S.limit=+v;else throw Error('Limit must be negative')})};
-  if($('#lim2'))$('#lim2').onchange=e=>{const v=e.target.value;act(async()=>{if(v==='')S.slimit=null;else if(+v<0)S.slimit=+v;else throw Error('Limit must be negative')})};
+    ...(S.focus!==n.k?[['focus','Focus here']]:[]),...((cm==='x'?[T.w,T.b]:[S]).some(t=>t.focus!==START)?[['unfocus','Unfocus']]:[]),
+    ['prune',n.ignore?'Revive branch':'Prune branch'],...(subtree(n.k).some(x=>x.ignore)?[['reviveall','Revive entire subtree']]:[]),['del','Delete'],['stay','Depth-first'+(G.stay?' ✓':'')]]
+    .map(([a,t])=>`<button data-a="${a}"${a==='stay'&&G.stay?' class="on"':''}>${t}</button>`).join('')+
+    `<label class="mut" style="margin-top:6px">${G.stay?'Continue limit':'Limit'} (log₂, e.g. −5 ≈ 1 in 32 games)
+     <input id="lim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(G.limit)?G.limit:''}" placeholder="none"></label>`
+    +(G.stay?`<label class="mut" style="margin-top:6px">Start limit: Next line only jumps to positions above this (blank = same as continue limit)
+     <input id="lim2" type="number" max="-1" step="1" style="width:5em" value="${G.slimit==null?'':G.slimit}" placeholder="same"></label>`:'');
+  $('#lim').onchange=e=>{const v=e.target.value;if(v==='')G.limit=-Infinity;else if(+v<0)G.limit=+v;else return toast('Limit must be negative');saveG();render()};
+  if($('#lim2'))$('#lim2').onchange=e=>{const v=e.target.value;if(v==='')G.slimit=null;else if(+v<0)G.slimit=+v;else return toast('Limit must be negative');saveG();render()};
   const rows=n.moves.map(m=>{const t=S.nodes.get(m.to),w=userTurn(n)?0:Math.round(2**m.p*100);
     return`<tr data-mv="${m.uci}"><td><b>${m.san}</b>${t.ignore?' ✂':''}</td><td><div class="bar"><i style="width:${w}%"></i><span>${userTurn(n)?'—':pct(m.p)}</span></div></td><td>${pct(t.prob)}</td></tr>`}).join('');
   $('#moves').innerHTML=`<div class="tabbar"><span class="on">${userTurn(n)?'Your moves':'Opponent’s replies'}</span></div>`+(!userTurn(n)&&n.exp&&!n.N&&n.moves.length>1?'<p class="mut" style="margin:0 0 8px">No Lichess games here (with the current filters), so all legal moves are equally likely.</p>':'')
     +(rows?`<table><tr><th>Move</th><th>Opp. share</th><th>Reach</th></tr>${rows}</table>`
     :`<span class="mut">${userTurn(n)?'No moves yet — play one on the board.':'No moves available.'}</span>`);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
-  $('#colW').className=S.white?'on':'';$('#colB').className=S.white?'':'on';
+  $('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';
   $('#settings').innerHTML=`<p class="mut">Keys: ← back · → forward · ↑ focus root · N next line · F flip the board.</p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
    <p>Ratings:<br>${ALL_R.map(s=>`<label><input type="checkbox" data-cr="${s}"${cfg.ratings.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>`;
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
@@ -465,10 +490,12 @@ function calcM(n){ // M = total weight of the lines that run through n and end b
 function buildM(){ // full pass, used when entering practice mode or after a bulk change
   S.inF=new Set();(function d(k){if(S.inF.has(k))return;S.inF.add(k);S.nodes.get(k).moves.forEach(m=>d(m.to))})(S.focus);
   for(const k of S.post){const n=S.nodes.get(k);n.M=calcM(n)}}
-function flushM(){ // after a line: recompute the answered positions and their ancestors in one pass, children first
-  if(!P.pending.size)return;const seen=new Set(P.pending),st=[...P.pending];
-  while(st.length){const x=st.pop();for(const p of S.parents.get(x)||[])if(!seen.has(p)){seen.add(p);st.push(p)}}
-  [...seen].sort((a,b)=>S.pi.get(a)-S.pi.get(b)).forEach(x=>{const n=S.nodes.get(x);n.M=calcM(n)});P.pending.clear()}
+const pend=k=>(S.pend||(S.pend=new Set())).add(k);
+const buildAll=()=>{for(const t of activeTrees())sw(t,buildM)};
+function flushM(){ // after a line: recompute the answered positions and their ancestors in one pass, children first (every tree that was touched)
+  for(const t of [T.w,T.b])if(t&&t.pend?.size)sw(t,()=>{const seen=new Set(S.pend),st=[...S.pend];
+    while(st.length){const x=st.pop();for(const p of S.parents.get(x)||[])if(!seen.has(p)){seen.add(p);st.push(p)}}
+    [...seen].sort((a,b)=>S.pi.get(a)-S.pi.get(b)).forEach(x=>{const n=S.nodes.get(x);n.M=calcM(n)});S.pend.clear()})}
 function pick(items){const t=items.reduce((a,x)=>a+x[0],0);if(!(t>0))return null;let r=Math.random()*t;
   for(const x of items){r-=x[0];if(r<0)return x[1]}return items.at(-1)[1]}
 async function advance(id){ // play the opponent's moves until you must answer, or the line ends (always after an opponent move)
@@ -483,38 +510,37 @@ async function advance(id){ // play the opponent's moves until you must answer, 
     if(!m)return endLine(n.moves.length?'Well done – you’ve reached the end of the line! Everything beyond this point is ignored.':'Well done – you’ve reached the end of the line! There’s no opponent data stored beyond this position.');
     await sleep(450);if(id!==P.id)return;
     S.path=[...S.path,m.to];render();
-    if(S.nodes.get(m.to).prob<S.plimit)return endLine('Well done – you’ve reached the end of the line! The next positions are below your practice limit.')}}
-async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';S.path=pathTo(S.focus);
-  if(!(S.nodes.get(S.focus).M>0)){P.phase='none';return render()}
-  P.phase='busy';render();await advance(id)}
+    if(S.nodes.get(m.to).prob<G.plimit)return endLine('Well done – you’ve reached the end of the line! The next positions are below your practice limit.')}}
+async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';
+  const t=pick(activeTrees().map(t=>[sw(t,()=>S.nodes.get(S.focus).M||0),t])); // each tree in proportion to its total chance of being wrong
+  if(!t){P.phase='none';return render()}
+  S=t;if(cm==='x')S.flip=false;S.path=pathTo(S.focus);P.phase='busy';render();await advance(id)}
 function endLine(note){flushM();P.phase='wait';P.note=note;render()}
 async function attempt(from,to){
   if(P.phase!=='ask')return render();
   const n=cur(),ms=new Chess(n.fen).moves({verbose:true}).filter(x=>x.from===from&&x.to===to);
   if(!ms.length)return render();
   let pr='';if(ms[0].flags.includes('p')){pr=await askPromo(ms[0].color==='w'?'white':'black');if(!pr)return render()}
-  const uci=from+to+pr,m=n.moves.find(x=>x.uci===uci),id=P.id;n.r=n.r||[0,0];P.pending.add(n.k);
+  const uci=from+to+pr,m=n.moves.find(x=>x.uci===uci),id=P.id;n.r=n.r||[0,0];pend(n.k);
   if(!m){n.r[1]++;P.failed=true;P.wrongs++;
     P.msg='Wrong – try again.'+(P.wrongs>1?` (${P.wrongs} wrong attempts)`:'')+(P.reveal?` The move is ${P.reveal}.`:'');persist();return render()}
   if(!P.failed)n.r[0]++; // an answer that follows a failed attempt is not counted as correct
   P.failed=false;P.msg='';persist();
   S.path=[...S.path,m.to];P.phase='busy';render();await advance(id)}
-function enterPractice(){B.path=S.path;mode='p';P.pending.clear();buildM();startLine()}
-function leavePractice(){P.id++;flushM();mode='b';S.path=B.path;render()}
-async function switchColour(w){const was=mode;if(was==='p'&&S.white===w)return;
-  if(was==='p')leavePractice();await setColour(w);if(was==='p')enterPractice()}
+function enterPractice(){P.prevS=S;for(const t of [T.w,T.b]){t.bpath=t.path;t.pend?.clear()}mode='p';buildAll();startLine()}
+function leavePractice(){P.id++;flushM();mode='b';for(const t of [T.w,T.b])if(t.bpath){t.path=t.bpath;t.bpath=null}S=P.prevS||S;render()}
 Object.assign(A,{
   modeB:()=>{if(mode==='p')leavePractice()},
   modeP:()=>{if(mode==='b')enterPractice()},
-  reveal(){if(P.phase!=='ask'||P.reveal)return;const n=cur();n.r=n.r||[0,0];n.r[1]++;P.failed=true;P.pending.add(n.k);
+  reveal(){if(P.phase!=='ask'||P.reveal)return;const n=cur();n.r=n.r||[0,0];n.r[1]++;P.failed=true;pend(n.k);
     P.reveal=n.moves.map(m=>m.san).join(' or ');P.msg='The move is '+P.reveal+'. Play it to continue.';persist();render()},
   pskip(){if(P.phase==='ask')startLine()},
   pignore(){if(P.phase!=='ask'&&P.phase!=='wait')return;const n=cur();
-    if(n.k===S.focus)return toast('Cannot ignore the position you are practising from. Change the focus in Build mode.');n.pign=true;P.pending.add(n.k);persist();startLine()},
+    if(n.k===S.focus)return toast('Cannot ignore the position you are practising from. Change the focus in Build mode.');n.pign=true;pend(n.k);persist();startLine()},
   pnext(){if(P.phase==='wait'||P.phase==='none')startLine()},
-  pclear(){for(const n of S.nodes.values())n.pign=false;P.pending.clear();buildM();persist();startLine()},
-  preset(){if(!confirm('Erase all practice results for this colour?'))return;
-    for(const n of S.nodes.values())n.r=null;P.pending.clear();buildM();persist();startLine()}});
+  pclear(){for(const t of activeTrees())sw(t,()=>{for(const n of S.nodes.values())n.pign=false;S.pend?.clear()});buildAll();persistAll();startLine()},
+  preset(){if(!confirm('Erase all practice results for '+(cm==='x'?'both colours':'this colour')+'?'))return;
+    for(const t of activeTrees())sw(t,()=>{for(const n of S.nodes.values())n.r=null;S.pend?.clear()});buildAll();persistAll();startLine()}});
 function renderPractice(){
   const ph=P.phase,ni=[...S.nodes.values()].filter(x=>x.pign).length;
   $('#prac').innerHTML=`<div class="tabbar"><span class="on">Practice · ${S.white?'White':'Black'}</span></div><p class="mut">${S.focus===START?'from the starting position':'from: '+(sanOf(pathTo(S.focus))||'start')}</p>
@@ -524,10 +550,10 @@ function renderPractice(){
    ${ph==='wait'?`<p class="good"><b>${P.note}</b></p>`:''}
    <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
-   <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(S.plimit)?S.plimit:''}" placeholder="none"></label>
+   <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(G.plimit)?G.plimit:''}" placeholder="none"></label>
    <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
    <p class="mut">Ignore and the practice limit only affect practice. Prune and the limit in Build mode are separate.</p></div>`;
-  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')S.plimit=-Infinity;else if(+v<0)S.plimit=+v;else toast('Limit must be negative');persist()}}
+  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')G.plimit=-Infinity;else if(+v<0)G.plimit=+v;else toast('Limit must be negative');saveG()}}
 
 /* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
 const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
@@ -553,8 +579,9 @@ async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(c
   try{await fetch('https://lichess.org/api/token',{method:'DELETE',headers:{Authorization:'Bearer '+t}})}catch{}}
 
 /* ---------- start ---------- */
-let w0=ls('colour')!=='b';
-try{const t=ls(slot(w0));if(t)load(JSON.parse(t));else blank(w0)}catch{blank(w0)}
+cm=['w','b','x'].includes(ls('colour'))?ls('colour'):'w';
+makeTree(true,ls(slot(true)));makeTree(false,ls(slot(false)));
+S=cm==='b'?T.b:T.w;if(cm==='x')T.w.flip=T.b.flip=false;
 applyTheme();finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
