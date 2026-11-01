@@ -115,6 +115,8 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 #gw{position:absolute;left:0;right:0;top:50%;height:7px;margin-top:-3px;background:rgb(214 79 0/.55);z-index:2;transition:none}
 .note{margin-top:8px;padding:7px 9px;border-radius:var(--rad);background:color-mix(in oklab,var(--link) 20%,var(--card));color:var(--hi);line-height:1.4}
 .pm.pe aside>#evalbox{display:block}html.pm.pe #gauge{display:flex}
+#rsz{position:absolute;right:-4px;bottom:-4px;width:30px;height:30px;border-radius:50%;z-index:30;cursor:nwse-resize;touch-action:none;color:rgb(255 255 255/.55)}
+#rsz svg{display:block}#rsz:hover{background:#6e371b;color:#d9996e}#rsz.drag{background:#425726;color:#adb979}
 </style>
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
@@ -126,7 +128,7 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 <p>Build an opening tree around the positions that actually come up most often in Lichess games.</p>
 <p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
 <button data-a="auth" class="on">Log in with Lichess</button></div></section>
-<main><section id="left"><div id="boardrow"><div id="gauge"><div id="gw"></div></div><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div></div></div><div id="pathline"></div></section>
+<main><section id="left"><div id="boardrow"><div id="gauge"><div id="gw"></div></div><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div><div id="rsz" title="Drag to resize the board (double-click to reset)"><svg viewBox="0 0 30 30" width="30" height="30"><path d="M22 10 10 22M22 16 16 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></div></div></div><div id="pathline"></div></section>
 <aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card" id="evalbox"><div id="evbar"><span></span></div><div id="evtop"></div><div id="evsetbody" hidden></div><div id="evlines"></div></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
@@ -341,7 +343,7 @@ function render(){
   document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');document.documentElement.classList.toggle('pe',mode==='p'&&P.eng);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
-  evalSync(n.fen,bw);drawEvalSettings();fitBoard();
+  evalSync(n.fen,bw);drawEvalSettings();applySize();
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
@@ -490,10 +492,17 @@ Object.assign(A,{
   evrun(){if(!EV.local?.running)localSearch(0)}});
 
 /* ---------- board size ---------- */
+const gaugeSpace=()=>typeof getComputedStyle==='undefined'?0:getComputedStyle($('#gauge')).display==='none'?0:$('#gauge').offsetWidth+8;
+function applySize(){ // manual board size (set with the corner handle) or, by default, as large as fits
+  const l=$('#left');if(!l)return;const gs=gaugeSpace();
+  if(cfg.bsize){const size=Math.min(cfg.bsize,Math.max(240,innerWidth-gs-30));
+    Object.assign(l.style,{flex:'0 0 auto',maxWidth:'none',minWidth:'0',width:(size+gs)+'px'})}
+  else Object.assign(l.style,{flex:'',maxWidth:'',minWidth:'',width:''});
+  fitBoard()}
 function fitBoard(){ // Chessground rounds the board to whole squares; give it a width that already is one, so the board, labels and gauge move together
   if(typeof getComputedStyle==='undefined')return;
   const row=$('#boardrow'),g=$('#gauge'),w=$('#boardwrap');if(!row||!w||!row.clientWidth)return;
-  const gs=getComputedStyle(g).display==='none'?0:g.offsetWidth+8,dpr=window.devicePixelRatio||1;
+  const gs=gaugeSpace(),dpr=window.devicePixelRatio||1;
   let unit=8;for(let m=1;m<=8;m++){const d=8*m*dpr;if(Math.abs(d/8-Math.round(d/8))<1e-6){unit=8*m;break}} // squares that are whole device pixels too
   const px=Math.max(unit*10,Math.floor((row.clientWidth-gs)/unit)*unit);if(w.style.width!==px+'px')w.style.width=px+'px'}
 /* ---------- practice mode ---------- */
@@ -609,7 +618,13 @@ async function logout(){const t=cfg.token;cfg.token='';ls('cfg',JSON.stringify(c
 cm=['w','b','x'].includes(ls('colour'))?ls('colour'):'w';
 makeTree(true,ls(slot(true)));makeTree(false,ls(slot(false)));
 S=cm==='b'?T.b:T.w;if(cm==='x')T.w.flip=T.b.flip=false;
-applyTheme();fitBoard();if(typeof ResizeObserver!=='undefined'){new ResizeObserver(fitBoard).observe($('#left'));addEventListener('resize',fitBoard)}
+applyTheme();applySize();if(typeof ResizeObserver!=='undefined'){new ResizeObserver(applySize).observe($('#left'));addEventListener('resize',applySize)}
+{const h=$('#rsz');let x0=0,y0=0,s0=0,down=false; // drag the corner handle: right/down = bigger, left/up = smaller; the board stays square
+  h.addEventListener('pointerdown',e=>{e.preventDefault();h.setPointerCapture(e.pointerId);down=true;h.classList.add('drag');x0=e.clientX;y0=e.clientY;s0=$('#boardwrap').offsetWidth;document.body.style.userSelect='none'});
+  h.addEventListener('pointermove',e=>{if(!down)return;cfg.bsize=Math.max(240,Math.round(s0+((e.clientX-x0)+(e.clientY-y0))/2));applySize()});
+  const end=()=>{if(!down)return;down=false;h.classList.remove('drag');document.body.style.userSelect='';ls('cfg',JSON.stringify(cfg))};
+  h.addEventListener('pointerup',end);h.addEventListener('pointercancel',end);
+  h.addEventListener('dblclick',()=>{cfg.bsize=null;ls('cfg',JSON.stringify(cfg));applySize()})}
 finishLogin();
 act(async()=>{if(cfg.token&&S.path.length===1)await enter([START])});
 </script></body></html>
