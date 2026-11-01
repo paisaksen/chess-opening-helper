@@ -114,6 +114,7 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 #gauge::after{content:"";position:absolute;inset:0;z-index:3;box-shadow:inset 0 0 5px #00000080}
 #gw{position:absolute;left:0;right:0;top:50%;height:7px;margin-top:-3px;background:rgb(214 79 0/.55);z-index:2;transition:none}
 .note{margin-top:8px;padding:7px 9px;border-radius:var(--rad);background:color-mix(in oklab,var(--link) 20%,var(--card));color:var(--hi);line-height:1.4}
+.pm.pe aside>#evalbox{display:block}html.pm.pe #gauge{display:flex}
 </style>
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
@@ -145,7 +146,7 @@ cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev
 const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity}; // settings shared by every tree
 const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null};ls('cfg',JSON.stringify(cfg))};
 let S=null,busy=false,mode='b',cm='w',NOTE=''; // NOTE: why no reply was played after your last move // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
-const T={w:null,b:null},P={prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
+const T={w:null,b:null},P={eng:false,noMove:false,ctx:null,prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
 const sw=(t,fn)=>{const old=S;S=t;try{return fn()}finally{S=old}}; // run fn with another tree as the active one
 function applyTheme(){const l='#ecdab9',d='#ae8a68';let q='';
   for(let r=0;r<8;r++)for(let c=0;c<8;c++)if((r+c)%2)q+=`M${c} ${r}h1v1h-1z`;
@@ -337,7 +338,7 @@ const pct=lp=>{if(lp===-Infinity)return'0%';const v=2**lp*100;return v>=0.1?(v>=
 function subtree(k){const seen=new Set(),out=[];(function w(k){if(seen.has(k))return;seen.add(k);const x=S.nodes.get(k);out.push(x);x.moves.forEach(m=>w(m.to))})(k);return out}
 function sanOf(path){let t='';path.slice(1).forEach((k,i)=>{const m=S.nodes.get(path[i]).moves.find(m=>m.to===k);if(m)t+=(i%2===0?`${i/2+1}. `:'')+m.san+' '});return t.trim()}
 function render(){
-  document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');
+  document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');document.documentElement.classList.toggle('pe',mode==='p'&&P.eng);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
   evalSync(n.fen,bw);drawEvalSettings();fitBoard();
@@ -440,7 +441,7 @@ async function runEval(fen,id){
   EV.loading=true;drawEval();const c=await cloudEval(fen);if(id!==EV.cur)return;
   EV.loading=false;if(c){EV.cloud=c;drawEval()}else localSearch(AUTO_DEPTH)}
 function evalSync(fen,bw){
-  EV.bw=bw;const want=cfg.ev.on&&mode==='b';document.documentElement.classList.toggle('ev',want);
+  EV.bw=bw;const want=!!((cfg.ev.on&&mode==='b')||(P.eng&&mode==='p'));EV.want=want;document.documentElement.classList.toggle('ev',want);
   if(!want){if(EV.fen!==null){EV.fen=null;EV.cur++;clearTimeout(EV.timer);EV.cloud=EV.local=null;EV.loading=false;engineStop()}}
   else if(fen!==EV.fen){
     EV.fen=fen;const id=++EV.cur;EV.cloud=null;EV.local=null;EV.status='';EV.loading=false;engineStop();clearTimeout(EV.timer);
@@ -451,11 +452,11 @@ const FIG={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘'},SHORT={lite1:'SF 19 lite',li
 const PLUS='<svg viewBox="0 0 24 24" width="18" height="18"><rect width="24" height="24" rx="4" fill="#3692e7"/><path d="M12 6v12M6 12h12" stroke="#fff" stroke-width="3"/></svg>';
 function drawEval(){
   const top=$('#evtop'),lines=$('#evlines'),gw=$('#gw');if(!top)return;
-  const on=cfg.ev.on&&mode==='b',L=EV.local&&EV.local.pvs.some(Boolean)?EV.local:null,C=EV.cloud;
+  const on=!!EV.want,L=EV.local&&EV.local.pvs.some(Boolean)?EV.local:null,C=EV.cloud;
   const useLocal=L&&(!C||L.depth>=C.depth),src=useLocal?L:C,pvs=src?(useLocal?L.pvs.filter(Boolean):C.pvs):[];
   const best=pvs[0],depth=src?(useLocal?L.depth:C.depth):0,run=EV.local&&EV.local.running;
   const plus=!on||EV.loading||run?'':(C||EV.local)?`<button class="deeper" data-a="evrun" title="Go deeper (no depth limit)">${PLUS}</button>`:'';
-  top.innerHTML=`<div class="ceval"><button class="sw${cfg.ev.on?' on':''}" data-a="evtoggle" role="switch" aria-checked="${cfg.ev.on}" title="Engine on/off"></button>
+  top.innerHTML=`<div class="ceval"><button class="sw${EV.want?' on':''}" data-a="evtoggle" role="switch" aria-checked="${!!EV.want}" title="Engine on/off"></button>
     <span class="pearl">${on?(best?scoreText(best):'…'):'—'}</span>
     <div class="engine"><div>${SHORT[curEngine()]} <span class="tech">NNUE</span></div>
     <div class="info">${on?`${plus}${src?'Depth '+depth:EV.loading?'checking the cloud…':''}${src&&!useLocal?' <span class="cloudtag">CLOUD</span>':''}${run?' …':''}`:'in local browser'}</div></div>
@@ -483,7 +484,8 @@ function drawEvalSettings(){
   if(multi){$('#evThr').oninput=x=>{$('#evThrV').textContent=x.target.value};$('#evThr').onchange=x=>{cfg.ev.threads=+x.target.value;saveEv()}}
   $('#evHash').oninput=x=>{$('#evHashV').textContent=HASHES[x.target.value]};$('#evHash').onchange=x=>{cfg.ev.hash=HASHES[x.target.value];saveEv()}}
 Object.assign(A,{
-  evtoggle(){cfg.ev.on=!cfg.ev.on;ls('cfg',JSON.stringify(cfg));EV.fen=null;render()},
+  evtoggle(){if(mode==='p'){P.eng=false;render();return} // in practice the switch just hides the engine again
+    cfg.ev.on=!cfg.ev.on;ls('cfg',JSON.stringify(cfg));EV.fen=null;render()},
   evgear(){EV.showSet=!EV.showSet;drawEval()},
   evrun(){if(!EV.local?.running)localSearch(0)}});
 
@@ -519,8 +521,7 @@ async function advance(id){ // play the opponent's moves until you must answer, 
   for(;;){const n=cur();
     if(n.mate)return endLine('Well done – you’ve reached the end of the line: it finishes in checkmate!');
     if(userTurn(n)){
-      if(!n.moves.length)return endLine('Well done – you’ve reached the end of your prepared line! You have no response recorded for this position yet: build one in Build mode, or ignore the position.');
-      if(n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Well done – you’ve reached the end of the line! Everything beyond this point is ignored.'); // nothing left to practise from here
+      if(n.moves.length&&n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Well done – you’ve reached the end of the line! Everything beyond this point is ignored.'); // nothing left to practise from here
       P.phase='ask';P.wrongs=0;P.reveal='';P.failed=false;P.msg='';return render()}
     const m=pick(n.moves.map(m=>[2**m.p*wc(n,m),m])) // normal case: follow the weights
       ||pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])); // you left the planned line: play on naturally
@@ -528,7 +529,7 @@ async function advance(id){ // play the opponent's moves until you must answer, 
     await sleep(450);if(id!==P.id)return;
     S.path=[...S.path,m.to];render();
     if(S.nodes.get(m.to).prob<G.plimit)return endLine('Well done – you’ve reached the end of the line! The next positions are below your practice limit.')}}
-async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';
+async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';P.eng=false;P.noMove=false;P.ctx=null;
   const t=pick(activeTrees().map(t=>[sw(t,()=>S.nodes.get(S.focus).M||0),t])); // each tree in proportion to its total chance of being wrong
   if(!t){P.phase='none';return render()}
   S=t;if(cm==='x')S.flip=false;S.path=pathTo(S.focus);P.phase='busy';render();await advance(id)}
@@ -538,20 +539,29 @@ async function attempt(from,to){
   const n=cur(),ms=new Chess(n.fen).moves({verbose:true}).filter(x=>x.from===from&&x.to===to);
   if(!ms.length)return render();
   let pr='';if(ms[0].flags.includes('p')){pr=await askPromo(ms[0].color==='w'?'white':'black');if(!pr)return render()}
-  const uci=from+to+pr,m=n.moves.find(x=>x.uci===uci),id=P.id;n.r=n.r||[0,0];pend(n.k);
+  const uci=from+to+pr,m=n.moves.find(x=>x.uci===uci),id=P.id;
+  if(!n.moves.length)return endNoMove(n,uci); // nothing is recorded here: end the line and show the engine
+  n.r=n.r||[0,0];pend(n.k);
   if(!m){n.r[1]++;P.failed=true;P.wrongs++;
     P.msg='Wrong – try again.'+(P.wrongs>1?` (${P.wrongs} wrong attempts)`:'')+(P.reveal?` The move is ${P.reveal}.`:'');persist();return render()}
   if(!P.failed)n.r[0]++; // an answer that follows a failed attempt is not counted as correct
   P.failed=false;P.msg='';persist();
   S.path=[...S.path,m.to];P.phase='busy';render();await advance(id)}
 function enterPractice(){P.prevS=S;for(const t of [T.w,T.b]){t.bpath=t.path;t.pend?.clear()}mode='p';buildAll();startLine()}
-function leavePractice(){P.id++;flushM();mode='b';for(const t of [T.w,T.b])if(t.bpath){t.path=t.bpath;t.bpath=null}S=P.prevS||S;render()}
+function endNoMove(n,uci){ // the user played a move where none is recorded: say so, and let the engine judge the position they were in
+  const mv=new Chess(n.fen).move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]});
+  P.ctx={path:S.path};P.noMove=true;P.eng=true;
+  endLine('End of line – no correct move is recorded for this position. You played '+(mv?mv.san:uci)+'; the engine below shows how that compares.')}
+function leavePractice(keep){P.id++;flushM();mode='b';P.eng=false;for(const t of [T.w,T.b])if(t.bpath){t.path=t.bpath;t.bpath=null}if(!keep)S=P.prevS||S;render()}
 Object.assign(A,{
   modeB:()=>{if(mode==='p')leavePractice()},
   modeP:()=>{if(mode==='b')enterPractice()},
-  reveal(){if(P.phase!=='ask'||P.reveal)return;const n=cur();n.r=n.r||[0,0];n.r[1]++;P.failed=true;pend(n.k);
+  reveal(){if(P.phase!=='ask'||P.reveal)return;const n=cur();
+    if(!n.moves.length){P.msg='No move is recorded for this position. Play any move to end the line.';return render()}
+    n.r=n.r||[0,0];n.r[1]++;P.failed=true;pend(n.k);
     P.reveal=n.moves.map(m=>m.san).join(' or ');P.msg='The move is '+P.reveal+'. Play it to continue.';persist();render()},
   pskip(){if(P.phase==='ask')startLine()},
+  pbuild(){if(!P.ctx)return;const path=P.ctx.path;leavePractice(true);S.path=path;render();persistAll()}, // open the position in Build mode to record a move
   pignore(){if(P.phase!=='ask'&&P.phase!=='wait')return;const n=cur();
     if(n.k===S.focus)return toast('Cannot ignore the position you are practising from. Change the focus in Build mode.');n.pign=true;pend(n.k);persist();startLine()},
   pnext(){if(P.phase==='wait'||P.phase==='none')startLine()},
@@ -564,8 +574,8 @@ function renderPractice(){
    ${ph==='none'?'<p>Nothing to practise yet. Build some lines in Build mode, or check your focus and ignored positions.</p>':''}
    ${ph==='busy'?'<p class="mut">…</p>':''}
    ${ph==='ask'?`<p><b>Your move.</b></p>${P.msg?`<p class="bad">${P.msg}</p>`:''}`:''}
-   ${ph==='wait'?`<p class="good"><b>${P.note}</b></p>`:''}
-   <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
+   ${ph==='wait'?`<p class="${P.noMove?'':'good'}"><b>${P.note}</b></p>`:''}
+   <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='wait'&&P.noMove?'<button data-a="pbuild">Record a move in Build mode</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
    <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(G.plimit)?G.plimit:''}" placeholder="none"></label>
    <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
