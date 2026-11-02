@@ -115,8 +115,8 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 #gw{position:absolute;left:0;right:0;top:50%;height:7px;margin-top:-3px;background:rgb(214 79 0/.55);z-index:2;transition:none}
 .note{margin-top:8px;padding:7px 9px;border-radius:var(--rad);background:color-mix(in oklab,var(--link) 20%,var(--card));color:var(--hi);line-height:1.4}
 .pm.pe aside>#evalbox{display:block}html.pm.pe #gauge{display:flex}
-#rsz{position:absolute;right:-4px;bottom:-4px;width:30px;height:30px;border-radius:50%;z-index:30;cursor:nwse-resize;touch-action:none;color:rgb(255 255 255/.55)}
-#rsz svg{display:block}#rsz:hover{background:#6e371b;color:#d9996e}#rsz.drag{background:#425726;color:#adb979}
+#rsz{position:absolute;right:-4px;bottom:-4px;width:30px;height:30px;border-radius:50%;z-index:30;cursor:nwse-resize;touch-action:none;color:#000}
+#rsz svg{display:block}#rsz:hover{background:rgb(198 89 36/.5)}#rsz.drag{background:rgb(110 153 58/.5)} /* black lines; translucent circle (sampled from Lichess) */
 </style>
 <script>try{if(!JSON.parse(localStorage.getItem('cfg')).token)throw 0}catch{document.documentElement.classList.add('out')}</script>
 </head><body>
@@ -145,8 +145,8 @@ const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.s
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
 cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev);
-const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity}; // settings shared by every tree
-const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null};ls('cfg',JSON.stringify(cfg))};
+const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity,pmode:cfg.g?.pmode||'pos',alpha:cfg.g?.alpha??1}; // pmode: how practice picks lines; alpha: prior per legal move // settings shared by every tree
+const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null,pmode:G.pmode,alpha:G.alpha};ls('cfg',JSON.stringify(cfg))};
 let S=null,busy=false,mode='b',cm='w',NOTE=''; // NOTE: why no reply was played after your last move // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
 const T={w:null,b:null},P={eng:false,noMove:false,ctx:null,prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
 const sw=(t,fn)=>{const old=S;S=t;try{return fn()}finally{S=old}}; // run fn with another tree as the active one
@@ -172,8 +172,9 @@ function buildOpp(n){ // all legal moves of an opponent position, probability (g
   n.N=ls.reduce((a,m)=>a+(n.g[uc(m)]||0),0);n.moves=[];
   for(const m of ls){const u=uc(m);c.move({from:m.from,to:m.to,promotion:m.promotion});const f=c.fen();c.undo();
     const ch=node(f);if(m.san.endsWith('#'))ch.mate=true;
-    n.moves.push({uci:u,san:m.san,to:ch.k,p:Math.log2(((n.g[u]||0)+1)/(n.N+ls.length))})}
+    n.moves.push({uci:u,san:m.san,to:ch.k,p:Math.log2(((n.g[u]||0)+G.alpha)/(n.N+G.alpha*ls.length))})}
   n.moves.sort((a,b)=>b.p-a.p)}
+function rebuildProbs(){for(const t of [T.w,T.b])sw(t,()=>{for(const n of S.nodes.values())if(n.exp)buildOpp(n);recompute()});render()}
 function addMove(n,uci,p){uci=fixCastle(n,uci);
   const ex=n.moves.find(m=>m.uci===uci);if(ex)return ex;
   const c=new Chess(n.fen),r=c.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]});
@@ -376,8 +377,10 @@ function render(){
     :`<span class="mut">${userTurn(n)?'No moves yet — play one on the board.':'No moves available.'}</span>`);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';
   $('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';
-  $('#settings').innerHTML=`<p class="mut">Keys: ← back · → forward · ↑ focus root · N next line · F flip the board.</p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
+  $('#settings').innerHTML=`<p class="mut">Keys: ← back · → forward · ↑ focus root · N next line · F flip the board.</p>
+   <p><label class="mut">Prior per legal move <input id="alpha" type="number" min="0.01" max="5" step="0.05" style="width:5em" value="${G.alpha}"></label><br><span class="mut">A reply with g games gets (g + prior) / (total games + prior × legal moves). 1 is the default; lower makes replies Lichess has never seen less likely, which matters where there are few games.</span></p><p><button data-a="reset">Reset ${S.white?'White':'Black'} tree…</button></p><p>Speeds:<br>${ALL_S.map(s=>`<label><input type="checkbox" data-cs="${s}"${cfg.speeds.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>
    <p>Ratings:<br>${ALL_R.map(s=>`<label><input type="checkbox" data-cr="${s}"${cfg.ratings.includes(s)?' checked':''}> ${s}</label>`).join('')}</p>`;
+  $('#alpha').onchange=e=>{const v=+e.target.value;if(v>0&&v<=5){G.alpha=v;saveG();rebuildProbs()}else toast('Prior must be between 0 and 5')};
   document.querySelectorAll('[data-cs],[data-cr]').forEach(i=>i.onchange=()=>{
     cfg.speeds=[...document.querySelectorAll('[data-cs]:checked')].map(x=>x.dataset.cs);
     cfg.ratings=[...document.querySelectorAll('[data-cr]:checked')].map(x=>x.dataset.cr);ls('cfg',JSON.stringify(cfg))})}
@@ -509,11 +512,11 @@ function fitBoard(){ // Chessground rounds the board to whole squares; give it a
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const qOf=n=>n.moves.length?((n.r?.[1]||0)+1)/((n.r?.[0]||0)+(n.r?.[1]||0)+2):1; // chance of getting this position wrong: (wrong+1)/(attempts+2); 1 if you have no move stored
 const wc=(n,m)=>S.back.has(m)?0:(S.nodes.get(m.to).M||0);
-function calcM(n){ // M = total weight of the lines that run through n and end below it: reach × product of your wrong-chances along the line.
+function calcM(n){ // M, by position: the chance that your FIRST mistake in a game from here is at n or below it = q + (1-q) × (what follows). So each position is weighted by how likely it is, times the chance you got every earlier move right, times the chance you get this one wrong. (By whole line: reach × the product of your wrong-chances along the line.)
   // Only reads the stored M of n's children. Lines start at the focus position, so only the focus subtree has any weight.
   if(n.pign||n.mate||!S.inF.has(n.k))return 0;
   if(userTurn(n)){if(!n.moves.length)return 1; // unanswered position: a line ends here, wrong-chance 1
-    let s=0;for(const m of n.moves)s+=wc(n,m);return qOf(n)*s/n.moves.length}
+    let s=0;for(const m of n.moves)s+=wc(n,m);return G.pmode==='line'?qOf(n)*s/n.moves.length:qOf(n)+(1-qOf(n))*s/n.moves.length} // by position: a mistake here, or (if you play it correctly) one further on
   let s=0;for(const m of n.moves)s+=2**m.p*wc(n,m);return s}
 function buildM(){ // full pass, used when entering practice mode or after a bulk change
   S.inF=new Set();(function d(k){if(S.inF.has(k))return;S.inF.add(k);S.nodes.get(k).moves.forEach(m=>d(m.to))})(S.focus);
@@ -531,14 +534,15 @@ async function advance(id){ // play the opponent's moves until you must answer, 
     if(n.mate)return endLine('Well done – you’ve reached the end of the line: it finishes in checkmate!');
     if(userTurn(n)){
       if(n.moves.length&&n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Well done – you’ve reached the end of the line! Everything beyond this point is ignored.'); // nothing left to practise from here
+      P.stop=G.pmode==='pos'&&!P.cont&&S.inF.has(n.k)&&Math.random()<(n.M>0?qOf(n)/n.M:1); // is this the position to be tested?
       P.phase='ask';P.wrongs=0;P.reveal='';P.failed=false;P.msg='';return render()}
-    const m=pick(n.moves.map(m=>[2**m.p*wc(n,m),m])) // normal case: follow the weights
+    const m=(P.cont?null:pick(n.moves.map(m=>[2**m.p*wc(n,m),m]))) // before the tested position: follow the weights; after it: play on like a real game
       ||pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])); // you left the planned line: play on naturally
     if(!m)return endLine(n.moves.length?'Well done – you’ve reached the end of the line! Everything beyond this point is ignored.':'Well done – you’ve reached the end of the line! There’s no opponent data stored beyond this position.');
     await sleep(450);if(id!==P.id)return;
     S.path=[...S.path,m.to];render();
     if(S.nodes.get(m.to).prob<G.plimit)return endLine('Well done – you’ve reached the end of the line! The next positions are below your practice limit.')}}
-async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';P.eng=false;P.noMove=false;P.ctx=null;
+async function startLine(){P.id++;const id=P.id;flushM();P.msg='';P.note='';P.eng=false;P.noMove=false;P.ctx=null;P.cont=false;P.stop=false;
   const t=pick(activeTrees().map(t=>[sw(t,()=>S.nodes.get(S.focus).M||0),t])); // each tree in proportion to its total chance of being wrong
   if(!t){P.phase='none';return render()}
   S=t;if(cm==='x')S.flip=false;S.path=pathTo(S.focus);P.phase='busy';render();await advance(id)}
@@ -555,7 +559,7 @@ async function attempt(from,to){
     P.msg='Wrong – try again.'+(P.wrongs>1?` (${P.wrongs} wrong attempts)`:'')+(P.reveal?` The move is ${P.reveal}.`:'');persist();return render()}
   if(!P.failed)n.r[0]++; // an answer that follows a failed attempt is not counted as correct
   P.failed=false;P.msg='';persist();
-  S.path=[...S.path,m.to];P.phase='busy';render();await advance(id)}
+  S.path=[...S.path,m.to];if(G.pmode==='pos'&&(P.stop||!(S.nodes.get(m.to).M>0)))P.cont=true;P.phase='busy';render();await advance(id)}
 function enterPractice(){P.prevS=S;for(const t of [T.w,T.b]){t.bpath=t.path;t.pend?.clear()}mode='p';buildAll();startLine()}
 function endNoMove(n,uci){ // the user played a move where none is recorded: say so, and let the engine judge the position they were in
   const mv=new Chess(n.fen).move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]});
@@ -587,9 +591,11 @@ function renderPractice(){
    <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='wait'&&P.noMove?'<button data-a="pbuild">Record a move in Build mode</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
    <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(G.plimit)?G.plimit:''}" placeholder="none"></label>
+   <p class="mut" style="margin:8px 0 0"><label>Weighting <select id="pmode"><option value="pos"${G.pmode==='pos'?' selected':''}>By position (first mistake)</option><option value="line"${G.pmode==='line'?' selected':''}>By whole line (favours short lines)</option></select></label></p>
    <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
    <p class="mut">Ignore and the practice limit only affect practice. Prune and the limit in Build mode are separate.</p></div>`;
-  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')G.plimit=-Infinity;else if(+v<0)G.plimit=+v;else toast('Limit must be negative');saveG()}}
+  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')G.plimit=-Infinity;else if(+v<0)G.plimit=+v;else toast('Limit must be negative');saveG()};
+  $('#pmode').onchange=e=>{G.pmode=e.target.value;saveG();buildAll();startLine()}}
 
 /* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
 const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
