@@ -145,8 +145,8 @@ const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.s
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
 cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev);
-const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity,pmode:cfg.g?.pmode||'pos',alpha:cfg.g?.alpha??1}; // pmode: how practice picks lines; alpha: prior per legal move // settings shared by every tree
-const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null,pmode:G.pmode,alpha:G.alpha};ls('cfg',JSON.stringify(cfg))};
+const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity,alpha:cfg.g?.alpha??1}; // alpha: prior per legal move // settings shared by every tree
+const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null,alpha:G.alpha};ls('cfg',JSON.stringify(cfg))};
 let S=null,busy=false,mode='b',cm='w',NOTE=''; // NOTE: why no reply was played after your last move // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
 const T={w:null,b:null},P={eng:false,noMove:false,ctx:null,prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
 const sw=(t,fn)=>{const old=S;S=t;try{return fn()}finally{S=old}}; // run fn with another tree as the active one
@@ -512,11 +512,11 @@ function fitBoard(){ // Chessground rounds the board to whole squares; give it a
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const qOf=n=>n.moves.length?((n.r?.[1]||0)+1)/((n.r?.[0]||0)+(n.r?.[1]||0)+2):1; // chance of getting this position wrong: (wrong+1)/(attempts+2); 1 if you have no move stored
 const wc=(n,m)=>S.back.has(m)?0:(S.nodes.get(m.to).M||0);
-function calcM(n){ // M, by position: the chance that your FIRST mistake in a game from here is at n or below it = q + (1-q) × (what follows). So each position is weighted by how likely it is, times the chance you got every earlier move right, times the chance you get this one wrong. (By whole line: reach × the product of your wrong-chances along the line.)
+function calcM(n){ // M, by position: the chance that your FIRST mistake in a game from here is at n or below it = q + (1-q) × (what follows). So each position is weighted by how likely it is, times the chance you got every earlier move right, times the chance you get this one wrong.
   // Only reads the stored M of n's children. Lines start at the focus position, so only the focus subtree has any weight.
   if(n.pign||n.mate||!S.inF.has(n.k))return 0;
   if(userTurn(n)){if(!n.moves.length)return 1; // unanswered position: a line ends here, wrong-chance 1
-    let s=0;for(const m of n.moves)s+=wc(n,m);return G.pmode==='line'?qOf(n)*s/n.moves.length:qOf(n)+(1-qOf(n))*s/n.moves.length} // by position: a mistake here, or (if you play it correctly) one further on
+    let s=0;for(const m of n.moves)s+=wc(n,m);return qOf(n)+(1-qOf(n))*s/n.moves.length} // a mistake here, or (if you play it correctly) one further on
   let s=0;for(const m of n.moves)s+=2**m.p*wc(n,m);return s}
 function buildM(){ // full pass, used when entering practice mode or after a bulk change
   S.inF=new Set();(function d(k){if(S.inF.has(k))return;S.inF.add(k);S.nodes.get(k).moves.forEach(m=>d(m.to))})(S.focus);
@@ -534,7 +534,7 @@ async function advance(id){ // play the opponent's moves until you must answer, 
     if(n.mate)return endLine('Well done – you’ve reached the end of the line: it finishes in checkmate!');
     if(userTurn(n)){
       if(n.moves.length&&n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Well done – you’ve reached the end of the line! Everything beyond this point is ignored.'); // nothing left to practise from here
-      P.stop=G.pmode==='pos'&&!P.cont&&S.inF.has(n.k)&&Math.random()<(n.M>0?qOf(n)/n.M:1); // is this the position to be tested?
+      P.stop=!P.cont&&S.inF.has(n.k)&&Math.random()<(n.M>0?qOf(n)/n.M:1); // is this the position to be tested?
       P.phase='ask';P.wrongs=0;P.reveal='';P.failed=false;P.msg='';return render()}
     const m=(P.cont?null:pick(n.moves.map(m=>[2**m.p*wc(n,m),m]))) // before the tested position: follow the weights; after it: play on like a real game
       ||pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])); // you left the planned line: play on naturally
@@ -559,7 +559,7 @@ async function attempt(from,to){
     P.msg='Wrong – try again.'+(P.wrongs>1?` (${P.wrongs} wrong attempts)`:'')+(P.reveal?` The move is ${P.reveal}.`:'');persist();return render()}
   if(!P.failed)n.r[0]++; // an answer that follows a failed attempt is not counted as correct
   P.failed=false;P.msg='';persist();
-  S.path=[...S.path,m.to];if(G.pmode==='pos'&&(P.stop||!(S.nodes.get(m.to).M>0)))P.cont=true;P.phase='busy';render();await advance(id)}
+  S.path=[...S.path,m.to];if(P.stop||!(S.nodes.get(m.to).M>0))P.cont=true;P.phase='busy';render();await advance(id)}
 function enterPractice(){P.prevS=S;for(const t of [T.w,T.b]){t.bpath=t.path;t.pend?.clear()}mode='p';buildAll();startLine()}
 function endNoMove(n,uci){ // the user played a move where none is recorded: say so, and let the engine judge the position they were in
   const mv=new Chess(n.fen).move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]});
@@ -591,11 +591,9 @@ function renderPractice(){
    <div class="btns">${ph==='ask'?'<button data-a="reveal">Reveal move</button><button data-a="pskip">Skip line</button>':''}${ph==='wait'||ph==='none'?'<button data-a="pnext" class="on">Next line (Enter)</button>':''}${ph==='wait'&&P.noMove?'<button data-a="pbuild">Record a move in Build mode</button>':''}${ph==='ask'||ph==='wait'?'<button data-a="pignore">Ignore this position</button>':''}</div>
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
    <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(G.plimit)?G.plimit:''}" placeholder="none"></label>
-   <p class="mut" style="margin:8px 0 0"><label>Weighting <select id="pmode"><option value="pos"${G.pmode==='pos'?' selected':''}>By position (first mistake)</option><option value="line"${G.pmode==='line'?' selected':''}>By whole line (favours short lines)</option></select></label></p>
    <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
    <p class="mut">Ignore and the practice limit only affect practice. Prune and the limit in Build mode are separate.</p></div>`;
-  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')G.plimit=-Infinity;else if(+v<0)G.plimit=+v;else toast('Limit must be negative');saveG()};
-  $('#pmode').onchange=e=>{G.pmode=e.target.value;saveG();buildAll();startLine()}}
+  $('#plim').onchange=e=>{const v=e.target.value;if(v==='')G.plimit=-Infinity;else if(+v<0)G.plimit=+v;else toast('Limit must be negative');saveG()}}
 
 /* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
 const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
