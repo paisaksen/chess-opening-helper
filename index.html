@@ -145,8 +145,8 @@ const ls=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.s
 let cfg={token:'',speeds:['bullet','blitz','rapid','classical','correspondence'],ratings:['2200','2500']};
 try{Object.assign(cfg,JSON.parse(ls('cfg')||'{}'))}catch{}
 cfg.ev=Object.assign({on:false,engine:'lite1',threads:0,hash:128,lines:3},cfg.ev);
-const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity,alpha:cfg.g?.alpha??1,delay:cfg.g?.delay??300}; // alpha: prior per legal move // settings shared by every tree
-const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null,alpha:G.alpha,delay:G.delay};ls('cfg',JSON.stringify(cfg))};
+const G={limit:cfg.g?.limit??-Infinity,slimit:cfg.g?.slimit??null,stay:!!cfg.g?.stay,plimit:cfg.g?.plimit??-Infinity,alpha:cfg.g?.alpha??1,delay:cfg.g?.delay??300,likely:!!cfg.g?.likely}; // alpha: prior per legal move // settings shared by every tree
+const saveG=()=>{cfg.g={limit:isFinite(G.limit)?G.limit:null,slimit:G.slimit,stay:G.stay,plimit:isFinite(G.plimit)?G.plimit:null,alpha:G.alpha,delay:G.delay,likely:G.likely};ls('cfg',JSON.stringify(cfg))};
 let S=null,busy=false,mode='b',cm='w',NOTE='',RZ=''; // NOTE: why no reply was played after your last move // S = the tree being worked on; mode = build/practice; cm = colour mode: w, b or x (both)
 const T={w:null,b:null},P={eng:false,noMove:false,ctx:null,prevS:null,phase:'none',id:0,failed:false,msg:'',note:'',wrongs:0,reveal:''};
 const setH=(el,h)=>{if(el._h!==h){el._h=h;el.innerHTML=h}}; // skip identical redraws
@@ -521,7 +521,7 @@ function calcM(n){ // M, by position: the chance that your FIRST mistake in a ga
   // Only reads the stored M of n's children. Lines start at the focus position, so only the focus subtree has any weight.
   if(n.pign||n.mate||!S.inF.has(n.k))return 0;
   if(userTurn(n)){if(!n.moves.length)return 1; // unanswered position: a line ends here, wrong-chance 1
-    let s=0;for(const m of n.moves)s+=wc(n,m);return qOf(n)+(1-qOf(n))*s/n.moves.length} // a mistake here, or (if you play it correctly) one further on
+    let s=0;for(const m of n.moves)s+=wc(n,m);return G.likely?1+s/n.moves.length:qOf(n)+(1-qOf(n))*s/n.moves.length} // a mistake here, or (if you play it correctly) one further on. "Ignore my results": every position just counts once, so only how likely it is matters
   let s=0;for(const m of n.moves)s+=2**m.p*wc(n,m);return s}
 function buildM(){ // full pass, used when entering practice mode or after a bulk change
   S.inF=new Set();(function d(k){if(S.inF.has(k))return;S.inF.add(k);S.nodes.get(k).moves.forEach(m=>d(m.to))})(S.focus);
@@ -539,7 +539,7 @@ async function advance(id){ // play the opponent's moves until you must answer, 
     if(n.mate)return endLine('Well done – you’ve reached the end of the line: it finishes in checkmate!');
     if(userTurn(n)){
       if(n.moves.length&&n.moves.every(m=>S.nodes.get(m.to).pign))return endLine('Well done – you’ve reached the end of the line! Everything beyond this point is ignored.'); // nothing left to practise from here
-      P.stop=!P.cont&&S.inF.has(n.k)&&Math.random()<(n.M>0?qOf(n)/n.M:1); // is this the position to be tested?
+      P.stop=!P.cont&&S.inF.has(n.k)&&Math.random()<(n.M>0?(G.likely?1:qOf(n))/n.M:1); // is this the position to be tested?
       P.phase='ask';P.wrongs=0;P.reveal='';P.failed=false;P.msg='';return render()}
     const m=(P.cont?null:pick(n.moves.map(m=>[2**m.p*wc(n,m),m]))) // before the tested position: follow the weights; after it: play on like a real game
       ||pick(n.moves.filter(m=>!S.back.has(m)&&!S.nodes.get(m.to).pign).map(m=>[2**m.p,m])); // you left the planned line: play on naturally
@@ -597,10 +597,12 @@ function renderPractice(){
    <div style="border-top:1px solid var(--bd);margin-top:12px;padding-top:10px">
    <label class="mut">Practice limit (log₂) <input id="plim" type="number" max="-1" step="1" style="width:5em" value="${isFinite(G.plimit)?G.plimit:''}" placeholder="none"></label>
    <label class="mut" style="margin-left:10px">Reply delay (ms) <input id="pdelay" type="number" min="0" max="2000" step="50" style="width:5em" value="${G.delay}"></label>
+   <p class="mut" style="margin:8px 0 0"><label><input id="plike" type="checkbox"${G.likely?' checked':''}> Ignore my results: choose positions only by how likely they are</label></p>
    <div class="btns" style="margin-top:8px"><button data-a="pclear">Clear ignored (${ni})</button><button data-a="preset">Reset results</button></div>
    <p class="mut">Ignore and the practice limit only affect practice. Prune and the limit in Build mode are separate.</p></div>`);
   $('#plim').onchange=e=>{const v=e.target.value;if(v==='')G.plimit=-Infinity;else if(+v<0)G.plimit=+v;else toast('Limit must be negative');saveG()};
-  $('#pdelay').onchange=e=>{const v=+e.target.value;if(v>=0&&v<=2000){G.delay=v;saveG()}}}
+  $('#pdelay').onchange=e=>{const v=+e.target.value;if(v>=0&&v<=2000){G.delay=v;saveG()}};
+  $('#plike').onchange=e=>{G.likely=e.target.checked;saveG();buildAll();startLine()}}
 
 /* ---------- Lichess login (OAuth2 PKCE, no client secret) ---------- */
 const CLIENT_ID='chess-opening-helper',REDIR=location.origin+location.pathname;
