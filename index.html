@@ -48,7 +48,7 @@ aside>#prac{display:none}.pm aside>:not(#prac){display:none}.pm aside>#prac{disp
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b3261e;color:#fff;padding:8px 14px;border-radius:6px;display:none;max-width:90vw}
 #gate{display:none;justify-content:center;padding:48px 16px}.out #gate{display:flex}
 #gate .card{max-width:420px;text-align:center}#gate h2{margin-top:0}#gate button{padding:10px 18px;font-weight:700}
-#boardrow{display:flex;gap:6px;align-items:stretch}#boardwrap{position:relative;container-type:inline-size;flex:none;width:100%} /* width is snapped to whole squares by fitBoard() */
+#boardrow{display:flex;gap:0;align-items:stretch}#boardwrap{position:relative;container-type:inline-size;flex:none;width:100%} /* width is snapped to whole squares by fitBoard() */
 #gauge{display:none;width:16px;flex:none;border-radius:4px;overflow:hidden;background:#403d39;flex-direction:column;justify-content:flex-end}
 html.ev #gauge{display:flex}#gauge.rev{justify-content:flex-start}#gw{background:#f0f0f0;height:50%;transition:height .3s}
 #evbar{height:3px;margin:-12px -12px 9px;border-radius:8px 8px 0 0;overflow:hidden}#evbar span{display:block;height:100%;width:0;background:#629924;transition:width .3s}
@@ -108,7 +108,7 @@ button.deeper{color:var(--link)}button.gear{font-size:16px;padding:0 6px;border-
 button.sw{width:40px;height:24px;border-radius:12px;align-self:center}
 button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-size:11px}button.sw.on::after{left:19px}
 #evsetbody{margin:0;padding:10px;border-top:0}#evlines{margin:0}.pvl{padding:3px 10px;border-top:0;font-size:1rem}#evlines>.mut{padding:3px 10px}
-#gauge{width:10px;margin:0 4px;background:linear-gradient(to bottom,#444 var(--p),silver var(--p));overflow:hidden;position:relative;transition:--p 1s}
+#gauge{width:10px;margin:0 0 0 6px;background:linear-gradient(to bottom,#444 var(--p),silver var(--p));overflow:hidden;position:relative;transition:--p 1s}
 #gauge.rev{transform:rotateX(180deg);justify-content:flex-end}
 #gauge::before{content:"";position:absolute;inset:0;z-index:1;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(12.5% - 2px),rgb(136 136 136/.45) calc(12.5% - 2px),rgb(136 136 136/.45) 12.5%)}
 #gauge::after{content:"";position:absolute;inset:0;z-index:3;box-shadow:inset 0 0 5px #00000080}
@@ -128,7 +128,7 @@ button.sw::after{top:3px;left:3px;width:18px;height:18px;line-height:18px;font-s
 <p>Build an opening tree around the positions that actually come up most often in Lichess games.</p>
 <p id="gate-msg" class="mut">The opening explorer needs a free Lichess account, so please log in to continue. No special permissions are requested.</p>
 <button data-a="auth" class="on">Log in with Lichess</button></div></section>
-<main><section id="left"><div id="boardrow"><div id="gauge"><div id="gw"></div></div><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div><div id="rsz" title="Drag to resize the board (double-click to reset)"><svg viewBox="0 0 30 30" width="30" height="30"><path d="M22 10 10 22M22 16 16 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></div></div></div><div id="pathline"></div></section>
+<main><section id="left"><div id="boardrow"><div id="boardwrap"><div id="board"></div><div id="ranks"></div><div id="files"></div><div id="promo" class="cg-wrap"></div><div id="rsz" title="Drag to resize the board (double-click to reset)"><svg viewBox="0 0 30 30" width="30" height="30"><path d="M22 10 10 22M22 16 16 22" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></div></div><div id="gauge"><div id="gw"></div></div></div><div id="pathline"></div></section>
 <aside><div class="card" id="prac"></div><div class="card" id="info"></div><div class="card" id="evalbox"><div id="evbar"><span></span></div><div id="evtop"></div><div id="evsetbody" hidden></div><div id="evlines"></div></div><div class="card"><div class="btns" id="btns"></div></div>
 <div class="card" id="moves"></div>
 <details class="card"><summary>Settings</summary><div id="settings"></div></details></aside></main>
@@ -349,7 +349,7 @@ function render(){
   document.documentElement.classList.toggle('out',!cfg.token);$('#promo').classList.remove('show');document.documentElement.classList.toggle('pm',mode==='p');document.documentElement.classList.toggle('pe',mode==='p'&&P.eng);
   $('#auth').textContent=cfg.token?'Log out of Lichess':'Log in with Lichess';$('#colW').className=cm==='w'?'on':'';$('#colB').className=cm==='b'?'on':'';$('#colX').className=cm==='x'?'on':'';$('#mB').className=mode==='p'?'':'on';$('#mP').className=mode==='p'?'on':'';
   const n=cur(),c=new Chess(n.fen),bw=S.flip?!S.white:S.white;
-  evalSync(n.fen,bw);drawEvalSettings();{const sig=''+EV.want+mode+P.eng;if(sig!==RZ){RZ=sig;applySize()}} // the layout only needs measuring when the gauge appears or goes
+  evalSync(n.fen,bw);drawEvalSettings();{const sig=''+EV.want+mode+P.eng;if(sig!==RZ){RZ=sig;applySize();cg.redrawAll?.()}} // the layout only needs measuring when the gauge appears or goes
   let last=null;if(S.path.length>1){const m=S.nodes.get(S.path.at(-2)).moves.find(m=>m.to===n.k);if(m)last=[m.uci.slice(0,2),m.uci.slice(2,4)]}
   const col=c.turn()==='w'?'white':'black',dests=new Map();
   c.moves({verbose:true}).forEach(m=>{if(!dests.has(m.from))dests.set(m.from,[]);dests.get(m.from).push(m.to)});
@@ -500,7 +500,7 @@ Object.assign(A,{
   evrun(){if(!EV.local?.running)localSearch(0)}});
 
 /* ---------- board size ---------- */
-const gaugeSpace=()=>typeof getComputedStyle==='undefined'?0:getComputedStyle($('#gauge')).display==='none'?0:$('#gauge').offsetWidth+8;
+const gaugeSpace=()=>typeof getComputedStyle==='undefined'?0:getComputedStyle($('#gauge')).display==='none'?0:$('#gauge').offsetWidth+6;
 function applySize(){ // manual board size (set with the corner handle) or, by default, as large as fits
   const l=$('#left');if(!l)return;const gs=gaugeSpace();
   if(cfg.bsize){const size=Math.min(cfg.bsize,Math.max(240,innerWidth-gs-30));
